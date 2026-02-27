@@ -11,6 +11,9 @@ import {
   Calendar,
   Briefcase,
   FolderOpen,
+  Pencil,
+  Trash2,
+  MoreVertical,
 } from "lucide-react";
 
 interface Client {
@@ -30,7 +33,10 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     industry: "",
@@ -39,6 +45,12 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setMenuOpenId(null);
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
   }, []);
 
   const fetchClients = async () => {
@@ -55,25 +67,82 @@ export default function ClientsPage() {
     }
   };
 
+  const openAddModal = () => {
+    setEditingClient(null);
+    setFormData({ name: "", industry: "", description: "" });
+    setShowModal(true);
+  };
+
+  const openEditModal = (client: Client) => {
+    setEditingClient(client);
+    setFormData({
+      name: client.name,
+      industry: client.industry || "",
+      description: client.description || "",
+    });
+    setShowModal(true);
+    setMenuOpenId(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const res = await fetch("/api/clients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      if (res.ok) {
-        const newClient = await res.json();
-        setClients((prev) => [newClient, ...prev]);
-        setShowModal(false);
-        setFormData({ name: "", industry: "", description: "" });
+      if (editingClient) {
+        const res = await fetch(`/api/clients/${editingClient.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        if (res.ok) {
+          const { client: updated } = await res.json();
+          setClients((prev) =>
+            prev.map((c) =>
+              c.id === editingClient.id
+                ? { ...c, ...updated, _count: updated._count || c._count }
+                : c
+            )
+          );
+          setShowModal(false);
+          setEditingClient(null);
+        }
+      } else {
+        const res = await fetch("/api/clients", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+        if (res.ok) {
+          const newClient = await res.json();
+          setClients((prev) => [newClient, ...prev]);
+          setShowModal(false);
+        }
       }
+      setFormData({ name: "", industry: "", description: "" });
     } catch (error) {
-      console.error("Failed to create client:", error);
+      console.error("Failed to save client:", error);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (clientId: string) => {
+    if (!confirm("Delete this client? All associated entities, analyses, documents, and alerts will be permanently removed.")) {
+      return;
+    }
+    setDeletingId(clientId);
+    setMenuOpenId(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setClients((prev) => prev.filter((c) => c.id !== clientId));
+      }
+    } catch (error) {
+      console.error("Failed to delete client:", error);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -112,7 +181,6 @@ export default function ClientsPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Clients</h1>
@@ -121,7 +189,7 @@ export default function ClientsPage() {
             </p>
           </div>
           <button
-            onClick={() => setShowModal(true)}
+            onClick={openAddModal}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium shadow-sm cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -129,7 +197,6 @@ export default function ClientsPage() {
           </button>
         </div>
 
-        {/* Search */}
         <div className="relative mb-6">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
           <input
@@ -141,14 +208,12 @@ export default function ClientsPage() {
           />
         </div>
 
-        {/* Loading State */}
         {loading && (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
           </div>
         )}
 
-        {/* Empty State */}
         {!loading && clients.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-16 h-16 bg-surface-alt rounded-full flex items-center justify-center mb-4">
@@ -162,7 +227,7 @@ export default function ClientsPage() {
               documentation and compliance.
             </p>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={openAddModal}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -171,7 +236,6 @@ export default function ClientsPage() {
           </div>
         )}
 
-        {/* No Search Results */}
         {!loading && clients.length > 0 && filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Search className="w-10 h-10 text-muted mb-3" />
@@ -184,14 +248,49 @@ export default function ClientsPage() {
           </div>
         )}
 
-        {/* Client Grid */}
         {!loading && filtered.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {filtered.map((client) => (
               <div
                 key={client.id}
-                className="bg-surface border border-border rounded-xl p-6 hover:shadow-md hover:border-primary/30 transition-all group cursor-pointer"
+                className={`bg-surface border border-border rounded-xl p-6 hover:shadow-md hover:border-primary/30 transition-all group relative ${
+                  deletingId === client.id ? "opacity-50 pointer-events-none" : ""
+                }`}
               >
+                <div className="absolute top-4 right-4">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpenId(menuOpenId === client.id ? null : client.id);
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+                  >
+                    <MoreVertical className="w-4 h-4 text-muted" />
+                  </button>
+
+                  {menuOpenId === client.id && (
+                    <div
+                      className="absolute right-0 top-8 w-40 bg-surface border border-border rounded-lg shadow-lg z-10 py-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => openEditModal(client)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-surface-alt transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit Client
+                      </button>
+                      <button
+                        onClick={() => handleDelete(client.id)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-danger/5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete Client
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex items-start justify-between mb-4">
                   <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                     <Building2 className="w-5 h-5 text-primary" />
@@ -202,7 +301,10 @@ export default function ClientsPage() {
                   </span>
                 </div>
 
-                <h3 className="text-lg font-semibold text-foreground mb-1 group-hover:text-primary transition-colors">
+                <h3
+                  className="text-lg font-semibold text-foreground mb-1 group-hover:text-primary transition-colors cursor-pointer"
+                  onClick={() => openEditModal(client)}
+                >
                   {client.name}
                 </h3>
 
@@ -235,30 +337,41 @@ export default function ClientsPage() {
         )}
       </div>
 
-      {/* Add Client Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowModal(false)}
+            onClick={() => {
+              setShowModal(false);
+              setEditingClient(null);
+            }}
           />
           <div className="relative bg-surface rounded-xl shadow-xl w-full max-w-lg border border-border">
             <div className="flex items-center justify-between p-6 border-b border-border">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                  <FolderOpen className="w-5 h-5 text-primary" />
+                  {editingClient ? (
+                    <Pencil className="w-5 h-5 text-primary" />
+                  ) : (
+                    <FolderOpen className="w-5 h-5 text-primary" />
+                  )}
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-foreground">
-                    Add New Client
+                    {editingClient ? "Edit Client" : "Add New Client"}
                   </h2>
                   <p className="text-sm text-muted">
-                    Create a new transfer pricing client
+                    {editingClient
+                      ? "Update client details"
+                      : "Create a new transfer pricing client"}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingClient(null);
+                }}
                 className="p-2 hover:bg-surface-alt rounded-lg transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5 text-muted" />
@@ -326,7 +439,10 @@ export default function ClientsPage() {
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingClient(null);
+                  }}
                   className="flex-1 px-4 py-2.5 border border-border rounded-lg text-foreground hover:bg-surface-alt transition-colors font-medium cursor-pointer"
                 >
                   Cancel
@@ -337,7 +453,13 @@ export default function ClientsPage() {
                   className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {submitting ? "Creating..." : "Create Client"}
+                  {submitting
+                    ? editingClient
+                      ? "Saving..."
+                      : "Creating..."
+                    : editingClient
+                      ? "Save Changes"
+                      : "Create Client"}
                 </button>
               </div>
             </form>

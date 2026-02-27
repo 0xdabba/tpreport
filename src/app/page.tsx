@@ -184,11 +184,11 @@ const comparisonRows = [
 const pricingTiers = [
   {
     name: "Starter",
-    price: "4,999",
+    price: "9,999",
     period: "/mo",
     description: "For individual CAs getting started with TP practice",
     features: [
-      "Up to 5 client groups",
+      "Up to 3 client groups",
       "Basic TP documentation (Local File)",
       "Single-user access",
       "Standard benchmarking",
@@ -200,11 +200,11 @@ const pricingTiers = [
   },
   {
     name: "Professional",
-    price: "14,999",
+    price: "29,999",
     period: "/mo",
     description: "For growing CA firms with an active TP practice",
     features: [
-      "Up to 25 client groups",
+      "Up to 15 client groups",
       "Full suite (Local + Master + CbCR)",
       "Up to 5 team members",
       "Advanced benchmarking with global data",

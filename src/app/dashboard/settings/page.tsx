@@ -378,7 +378,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-bold text-foreground">
-                      <span className="text-lg">&#8377;</span>4,999
+                      <span className="text-lg">&#8377;</span>29,999
                     </p>
                     <p className="text-xs text-muted">/month</p>
                   </div>
