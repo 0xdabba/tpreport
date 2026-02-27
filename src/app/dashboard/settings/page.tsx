@@ -472,10 +472,92 @@ export default function SettingsPage() {
         {/* API Tab */}
         {activeTab === "api" && (
           <div className="space-y-6">
+            {/* AI Provider Configuration */}
             <div className="bg-surface border border-border rounded-xl">
               <div className="p-6 border-b border-border">
                 <h2 className="text-lg font-semibold text-foreground">
-                  API Key Management
+                  AI Report Generation
+                </h2>
+                <p className="text-sm text-muted mt-0.5">
+                  Configure your Anthropic Claude API key for AI-powered document generation
+                </p>
+              </div>
+              <div className="p-6 space-y-5">
+                <div className="flex items-start gap-3 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+                  <Zap className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-medium text-foreground mb-1">
+                      How AI Generation Works
+                    </h4>
+                    <p className="text-xs text-muted leading-relaxed">
+                      When you generate a document, TPassist pulls all entity data, transactions,
+                      and functional analysis from your database, then uses Claude AI to write
+                      each section with proper Indian TP legal references (Sections 92-92F, CBDT Rules 10DA/10DB).
+                      Each section can be regenerated individually or edited manually.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">
+                    Anthropic API Key
+                  </label>
+                  <p className="text-xs text-muted mb-2">
+                    Get your API key from{" "}
+                    <a
+                      href="https://console.anthropic.com/settings/keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      console.anthropic.com
+                    </a>
+                    . This key is stored in your server environment only and is never exposed to the browser.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      placeholder="sk-ant-api03-..."
+                      className="flex-1 px-3 py-2.5 bg-background border border-border rounded-lg text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-muted"
+                      disabled
+                    />
+                    <button
+                      className="px-4 py-2.5 bg-surface-alt border border-border rounded-lg text-sm text-muted font-medium cursor-not-allowed opacity-50"
+                      disabled
+                    >
+                      Save
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted mt-2">
+                    Set the <code className="bg-surface-alt px-1.5 py-0.5 rounded text-xs">ANTHROPIC_API_KEY</code> environment variable in your <code className="bg-surface-alt px-1.5 py-0.5 rounded text-xs">.env</code> file directly. For security, API keys cannot be set through the browser UI.
+                  </p>
+                </div>
+                <div className="border-t border-border pt-5">
+                  <h3 className="text-sm font-semibold text-foreground mb-3">
+                    AI Model Configuration
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-muted mb-1">Model</label>
+                      <div className="px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm text-foreground">
+                        Claude Sonnet 4
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted mb-1">Max Tokens / Section</label>
+                      <div className="px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm text-foreground">
+                        4,000
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* TPassist API Key Management */}
+            <div className="bg-surface border border-border rounded-xl">
+              <div className="p-6 border-b border-border">
+                <h2 className="text-lg font-semibold text-foreground">
+                  TPassist API Key
                 </h2>
                 <p className="text-sm text-muted mt-0.5">
                   Manage your API keys for programmatic access

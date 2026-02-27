@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Plus,
@@ -14,6 +15,8 @@ import {
   File,
   FileCheck,
   FilePen,
+  ExternalLink,
+  Sparkles,
 } from "lucide-react";
 
 interface Client {
@@ -104,6 +107,7 @@ function statusIcon(status: string) {
 }
 
 export default function DocumentsPage() {
+  const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -323,14 +327,22 @@ export default function DocumentsPage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleDownload(doc)}
-                  disabled={!doc.content}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm font-medium text-foreground hover:bg-border/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  <Download className="w-4 h-4" />
-                  Download
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => router.push(`/dashboard/documents/${doc.id}`)}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg text-sm font-medium text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Open
+                  </button>
+                  <button
+                    onClick={() => handleDownload(doc)}
+                    disabled={!doc.content}
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm font-medium text-foreground hover:bg-border/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -503,8 +515,12 @@ export default function DocumentsPage() {
                   disabled={submitting || !formData.type || !formData.clientId}
                   className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {submitting ? "Generating..." : "Generate Document"}
+                  {submitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  {submitting ? "Generating with AI..." : "Generate with AI"}
                 </button>
               </div>
             </form>
