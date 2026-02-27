@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  password      String
+  firm          String?
+  phone         String?
+  role          String    @default("ca")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  clients       Client[]
+}
+
+model Client {
+  id            String    @id @default(cuid())
+  name          String
+  industry      String?
+  description   String?
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  entities      Entity[]
+  analyses      FunctionalAnalysis[]
+  documents     Document[]
+  alerts        ComplianceAlert[]
+}
+
+model Entity {
+  id            String    @id @default(cuid())
+  name          String
+  country       String
+  entityType    String
+  role          String?
+  functions     String?
+  risks         String?
+  assets        String?
+  revenue       Float?
+  expenses      Float?
+  employees     Int?
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  parentId      String?
+  parent        Entity?   @relation("EntityHierarchy", fields: [parentId], references: [id])
+  children      Entity[]  @relation("EntityHierarchy")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  transactionsFrom Transaction[] @relation("FromEntity")
+  transactionsTo   Transaction[] @relation("ToEntity")
+}
+
+model Transaction {
+  id            String    @id @default(cuid())
+  type          String
+  description   String?
+  amount        Float?
+  currency      String    @default("INR")
+  method        String?
+  fromEntityId  String
+  fromEntity    Entity    @relation("FromEntity", fields: [fromEntityId], references: [id])
+  toEntityId    String
+  toEntity      Entity    @relation("ToEntity", fields: [toEntityId], references: [id])
+  analysisId    String?
+  analysis      FunctionalAnalysis? @relation(fields: [analysisId], references: [id])
+  createdAt     DateTime  @default(now())
+}
+
+model FunctionalAnalysis {
+  id            String    @id @default(cuid())
+  status        String    @default("draft")
+  summary       String?
+  functions     String?
+  risks         String?
+  assets        String?
+  pricingMethod String?
+  benchmarkData String?
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  documents     Document[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Document {
+  id            String    @id @default(cuid())
+  name          String
+  type          String
+  status        String    @default("draft")
+  content       String?
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  analysisId    String?
+  analysis      FunctionalAnalysis? @relation(fields: [analysisId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model ComplianceAlert {
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  severity      String    @default("info")
+  status        String    @default("active")
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  resolvedAt    DateTime?
+}
