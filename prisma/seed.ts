@@ -19,10 +19,10 @@ async function main() {
   // Create demo CA user
   const password = await hash("demo1234", 12);
   const user = await prisma.user.upsert({
-    where: { email: "demo@tpassist.com" },
+    where: { email: "demo@tpreport.in" },
     update: {},
     create: {
-      email: "demo@tpassist.com",
+      email: "demo@tpreport.in",
       password,
       name: "Rajesh Sharma",
       firm: "Sharma & Associates, Chartered Accountants",
@@ -498,7 +498,7 @@ async function main() {
 
   console.log("\n✓ Seed complete!");
   console.log("\nLogin credentials:");
-  console.log("  Email:    demo@tpassist.com");
+  console.log("  Email:    demo@tpreport.in");
   console.log("  Password: demo1234");
 }
 

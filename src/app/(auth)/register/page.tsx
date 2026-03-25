@@ -85,7 +85,7 @@ export default function RegisterPage() {
         Create your account
       </h2>
       <p className="mb-6 text-sm text-muted">
-        Get started with TPassist for your firm
+        Get started with TP Report for your firm
       </p>
 
       {error && (

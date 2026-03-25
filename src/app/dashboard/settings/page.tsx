@@ -490,7 +490,7 @@ export default function SettingsPage() {
                       How AI Generation Works
                     </h4>
                     <p className="text-xs text-muted leading-relaxed">
-                      When you generate a document, TPassist pulls all entity data, transactions,
+                      When you generate a document, TP Report pulls all entity data, transactions,
                       and functional analysis from your database, then uses Claude AI to write
                       each section with proper Indian TP legal references (Sections 92-92F, CBDT Rules 10DA/10DB).
                       Each section can be regenerated individually or edited manually.
@@ -553,11 +553,11 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* TPassist API Key Management */}
+            {/* TP Report API Key Management */}
             <div className="bg-surface border border-border rounded-xl">
               <div className="p-6 border-b border-border">
                 <h2 className="text-lg font-semibold text-foreground">
-                  TPassist API Key
+                  TP Report API Key
                 </h2>
                 <p className="text-sm text-muted mt-0.5">
                   Manage your API keys for programmatic access

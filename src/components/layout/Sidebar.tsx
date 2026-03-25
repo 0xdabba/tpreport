@@ -58,7 +58,7 @@ export default function Sidebar({ userName, userEmail, userFirm }: SidebarProps)
           </div>
           {!collapsed && (
             <span className="text-lg font-semibold text-secondary">
-              TPassist
+              TP Report
             </span>
           )}
         </Link>

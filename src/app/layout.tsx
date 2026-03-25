@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TPassist - Transfer Pricing Compliance, Automated",
+  title: "TP Report - Transfer Pricing Compliance, Automated",
   description:
     "Built for Indian CAs managing multi-entity clients. Generate compliant TP documentation, functional analysis, and intragroup agreements — without the Big Four price tag.",
   keywords: [
@@ -27,18 +27,18 @@ export const metadata: Metadata = {
     "functional analysis",
     "intragroup agreements",
   ],
-  authors: [{ name: "TPassist" }],
+  authors: [{ name: "TP Report" }],
   openGraph: {
-    title: "TPassist - Transfer Pricing Compliance, Automated",
+    title: "TP Report - Transfer Pricing Compliance, Automated",
     description:
       "Built for Indian CAs managing multi-entity clients. Generate compliant TP documentation, functional analysis, and intragroup agreements.",
     type: "website",
     locale: "en_IN",
-    siteName: "TPassist",
+    siteName: "TP Report",
   },
   twitter: {
     card: "summary_large_image",
-    title: "TPassist - Transfer Pricing Compliance, Automated",
+    title: "TP Report - Transfer Pricing Compliance, Automated",
     description:
       "Built for Indian CAs managing multi-entity clients. Generate compliant TP documentation and functional analysis.",
   },
