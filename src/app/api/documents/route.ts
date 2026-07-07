@@ -1,21 +1,17 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getFirmSession } from "@/lib/session";
 import type { GenerationContext } from "@/lib/llm";
+import { computeAlpRange } from "@/lib/benchmarking";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const userId = (session.user as { id: string }).id;
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const documents = await prisma.document.findMany({
       where: {
-        client: { userId },
+        client: { firmId: s.firmId },
       },
       include: {
         client: {
@@ -24,6 +20,9 @@ export async function GET() {
         analysis: {
           select: { id: true, status: true },
         },
+        approvedBy: { select: { id: true, name: true } },
+        submittedBy: { select: { id: true, name: true } },
+        _count: { select: { comments: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -40,14 +39,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as { id: string }).id;
     const body = await request.json();
-    const { name, type, clientId, analysisId, financialYear } = body;
+    const { name, type, clientId, analysisId, financialYear, benchmarkingSetId } = body;
 
     if (!name || !type || !clientId) {
       return NextResponse.json(
@@ -57,7 +53,7 @@ export async function POST(request: Request) {
     }
 
     const client = await prisma.client.findFirst({
-      where: { id: clientId, userId },
+      where: { id: clientId, firmId: s.firmId },
     });
 
     if (!client) {
@@ -67,22 +63,67 @@ export async function POST(request: Request) {
       );
     }
 
-    // Determine if LLM generation should be used
+    // Benchmarking reports must be grounded in a real comparable set —
+    // AI-fabricated comparables are a professional-liability hazard.
+    let benchmarkingCtx: GenerationContext["benchmarking"] = undefined;
+    if (type === "benchmarking" || benchmarkingSetId) {
+      if (!benchmarkingSetId) {
+        return NextResponse.json(
+          {
+            error:
+              "Benchmarking reports require a comparable set. Create one under Benchmarking (upload a database export or use the built-in dataset) and select it here.",
+          },
+          { status: 400 }
+        );
+      }
+      const set = await prisma.benchmarkingSet.findFirst({
+        where: { id: benchmarkingSetId, firmId: s.firmId },
+        include: { comparables: true },
+      });
+      if (!set) {
+        return NextResponse.json(
+          { error: "Benchmarking set not found" },
+          { status: 404 }
+        );
+      }
+      const accepted = set.comparables.filter((c) => c.accepted);
+      const margins = accepted
+        .map((c) => c.wavgMargin)
+        .filter((m): m is number => m !== null);
+      const range = computeAlpRange(margins);
+      benchmarkingCtx = {
+        setName: set.name,
+        sourceDb: set.sourceDb,
+        pli: set.pli,
+        testedParty: set.testedParty,
+        testedMargin: set.testedMargin,
+        rptThreshold: set.rptThreshold,
+        searchSteps: set.searchSteps ? JSON.parse(set.searchSteps) : [],
+        comparables: set.comparables.map((c) => ({
+          name: c.name,
+          businessDesc: c.businessDesc,
+          fyLabels: c.fyLabels ? JSON.parse(c.fyLabels) : [],
+          margins: c.margins ? JSON.parse(c.margins) : [],
+          wavgMargin: c.wavgMargin,
+          rptPct: c.rptPct,
+          accepted: c.accepted,
+          rejectReason: c.rejectReason,
+        })),
+        range,
+      };
+    }
+
     const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
 
     let content: string;
 
     if (hasApiKey) {
-      // Use LLM generation — pull real data from DB
-      const { generateFullDocument, assembleDocument } =
-        await import("@/lib/llm");
+      const { generateFullDocument, assembleDocument } = await import("@/lib/llm");
 
-      // Fetch all entities for this client
       const entities = await prisma.entity.findMany({
         where: { clientId },
       });
 
-      // Fetch transactions involving this client's entities
       const entityIds = entities.map((e) => e.id);
       const transactions = await prisma.transaction.findMany({
         where: {
@@ -97,7 +138,6 @@ export async function POST(request: Request) {
         },
       });
 
-      // Fetch analysis if provided
       let analysis = null;
       if (analysisId) {
         analysis = await prisma.functionalAnalysis.findUnique({
@@ -105,7 +145,6 @@ export async function POST(request: Request) {
         });
       }
 
-      // Fetch past approved reports for this client (for RAG / style matching)
       const pastReports = await prisma.document.findMany({
         where: {
           clientId,
@@ -122,10 +161,9 @@ export async function POST(request: Request) {
         .map((r) => r.content?.substring(0, 1500))
         .filter(Boolean) as string[];
 
-      // Fetch user's firm name
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { firm: true },
+      const firm = await prisma.firm.findUnique({
+        where: { id: s.firmId },
+        select: { name: true },
       });
 
       const ctx: GenerationContext = {
@@ -166,7 +204,8 @@ export async function POST(request: Request) {
             }
           : null,
         pastReportExcerpts: pastExcerpts.length > 0 ? pastExcerpts : undefined,
-        firmName: user?.firm || undefined,
+        firmName: firm?.name || undefined,
+        benchmarking: benchmarkingCtx,
       };
 
       const sections = await generateFullDocument(type, ctx);
@@ -177,7 +216,6 @@ export async function POST(request: Request) {
         financialYear || "2025-26"
       );
     } else {
-      // Fallback to static templates when no API key is configured
       content = generateStaticContent(
         type,
         client.name,
@@ -193,6 +231,8 @@ export async function POST(request: Request) {
         content,
         clientId,
         analysisId: analysisId || null,
+        benchmarkingSetId: benchmarkingSetId || null,
+        financialYear: financialYear || "2025-26",
       },
       include: {
         client: {
@@ -225,95 +265,10 @@ function generateStaticContent(
   clientName: string,
   financialYear: string
 ): string {
-  const templates: Record<string, string> = {
-    "tp-study": `TRANSFER PRICING STUDY REPORT
+  return `${type.toUpperCase().replace(/-/g, " ")}
 =======================================
 Client: ${clientName}
 Financial Year: ${financialYear}
-Date: ${new Date().toLocaleDateString("en-IN")}
 
-NOTE: This is a static template. Configure your Anthropic API key in Settings to enable AI-powered report generation with real entity and transaction data.
-
-1. EXECUTIVE SUMMARY
-This Transfer Pricing Study Report has been prepared for ${clientName} in accordance with Sections 92 to 92F of the Income-tax Act, 1961 read with Rules 10A to 10THD.
-
-2. INDUSTRY OVERVIEW
-[AI generation will populate this based on client industry]
-
-3. COMPANY OVERVIEW
-[AI generation will populate this from entity data]
-
-4. ASSOCIATED ENTERPRISES
-[AI generation will list entities from your database]
-
-5. INTERNATIONAL TRANSACTIONS
-[AI generation will detail transactions you've entered]
-
-6. FUNCTIONAL ANALYSIS
-[AI generation will build FAR analysis from entity profiles]
-
-7. ECONOMIC ANALYSIS
-[AI generation will create benchmarking with comparable companies]
-
-8. ARM'S LENGTH PRICE DETERMINATION
-[AI generation will compute ALP range from benchmarking]
-
-9. CONCLUSION
-[AI generation will summarize findings]`,
-
-    "local-file": `FORM 3CEB - LOCAL FILE
-=======================================
-Client: ${clientName} | FY: ${financialYear}
-NOTE: Configure Anthropic API key for AI-powered generation.
-
-Part A: Particulars — [Will be populated from client data]
-Part B: International Transactions — [Will be populated from transaction data]
-Part C: Specified Domestic Transactions — [If applicable]
-Part D: Additional Information — [Will include comparables and FAR summary]
-Certification — [CA details to be filled]`,
-
-    "master-file": `MASTER FILE (Rule 10DA)
-=======================================
-Client: ${clientName} Group | FY: ${financialYear}
-NOTE: Configure Anthropic API key for AI-powered generation.
-
-Part A: Organisational Structure — [Will map entity hierarchy]
-Part B: MNE Group Business — [Will describe group operations]
-Part C: Intangibles — [Will analyse IP strategy]
-Part D: Financial Activities — [Will describe intercompany financing]
-Part E: Financial and Tax Positions — [Will reference consolidated statements]`,
-
-    "agreement-services": `INTERCOMPANY SERVICE AGREEMENT
-=======================================
-Client: ${clientName} | FY: ${financialYear}
-NOTE: Configure Anthropic API key for AI-powered generation.
-
-[Full agreement will be drafted with specific service scope, compensation terms, and TP compliance clauses based on your transaction data]`,
-
-    "agreement-licensing": `INTERCOMPANY LICENSE AGREEMENT
-=======================================
-Client: ${clientName} | FY: ${financialYear}
-NOTE: Configure Anthropic API key for AI-powered generation.
-
-[Full agreement will be drafted with license grant, royalty terms, and TP/withholding provisions based on your transaction data]`,
-
-    "agreement-lending": `INTERCOMPANY LOAN AGREEMENT
-=======================================
-Client: ${clientName} | FY: ${financialYear}
-NOTE: Configure Anthropic API key for AI-powered generation.
-
-[Full agreement will be drafted with loan terms, interest benchmarking, thin capitalisation analysis, and TP compliance based on your transaction data]`,
-
-    benchmarking: `BENCHMARKING REPORT
-=======================================
-Client: ${clientName} | FY: ${financialYear}
-NOTE: Configure Anthropic API key for AI-powered generation.
-
-[Full report will include tested party analysis, MAM selection, search process, AI-generated comparable set with realistic Indian companies, and ALP range computation]`,
-  };
-
-  return (
-    templates[type] ||
-    `Document: ${type}\nClient: ${clientName}\nFY: ${financialYear}\nConfigure API key for AI generation.`
-  );
+NOTE: This is a static placeholder. Configure ANTHROPIC_API_KEY on the server to enable AI-assisted drafting grounded in your entity, transaction, and benchmarking data.`;
 }

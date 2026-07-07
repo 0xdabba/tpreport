@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getFirmSession } from "@/lib/session";
+import { gateClientCount } from "@/lib/plans";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const userId = (session.user as { id: string }).id;
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const clients = await prisma.client.findMany({
-      where: { userId },
+      where: { firmId: s.firmId },
       include: {
         _count: {
           select: {
@@ -21,6 +17,7 @@ export async function GET() {
             analyses: true,
             documents: true,
             alerts: true,
+            deadlines: true,
           },
         },
       },
@@ -39,14 +36,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as { id: string }).id;
     const body = await request.json();
-    const { name, industry, description } = body;
+    const { name, industry, description, pan, cin, turnover, groupRevenue, hasIntlTxn, hasSDT } = body;
 
     if (!name) {
       return NextResponse.json(
@@ -55,12 +49,27 @@ export async function POST(request: Request) {
       );
     }
 
+    const firm = await prisma.firm.findUnique({
+      where: { id: s.firmId },
+      include: { _count: { select: { clients: true } } },
+    });
+    if (!firm) return NextResponse.json({ error: "Firm not found" }, { status: 404 });
+    const gateError = gateClientCount(firm, firm._count.clients);
+    if (gateError) return NextResponse.json({ error: gateError }, { status: 403 });
+
     const client = await prisma.client.create({
       data: {
         name,
         industry: industry || null,
         description: description || null,
-        userId,
+        pan: pan || null,
+        cin: cin || null,
+        turnover: turnover ? Number(turnover) : null,
+        groupRevenue: groupRevenue ? Number(groupRevenue) : null,
+        hasIntlTxn: hasIntlTxn === undefined ? true : !!hasIntlTxn,
+        hasSDT: !!hasSDT,
+        firmId: s.firmId,
+        userId: s.userId,
       },
       include: {
         _count: {

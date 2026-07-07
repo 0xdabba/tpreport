@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getFirmSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 
 export async function GET(
@@ -8,18 +7,17 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const s = await getFirmSession();
+    if (!s) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const userId = (session.user as { id: string }).id;
+    const firmId = s.firmId;
     const { id } = await params;
 
     const entity = await prisma.entity.findFirst({
       where: {
         id,
-        client: { userId },
+        client: { firmId },
       },
       include: {
         client: {
@@ -58,12 +56,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const s = await getFirmSession();
+    if (!s) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const userId = (session.user as { id: string }).id;
+    const firmId = s.firmId;
     const { id } = await params;
     const body = await request.json();
 
@@ -71,7 +68,7 @@ export async function PUT(
     const existing = await prisma.entity.findFirst({
       where: {
         id,
-        client: { userId },
+        client: { firmId },
       },
     });
 
@@ -145,19 +142,18 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const s = await getFirmSession();
+    if (!s) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const userId = (session.user as { id: string }).id;
+    const firmId = s.firmId;
     const { id } = await params;
 
     // Verify entity belongs to user's client
     const existing = await prisma.entity.findFirst({
       where: {
         id,
-        client: { userId },
+        client: { firmId },
       },
       include: {
         children: { select: { id: true } },

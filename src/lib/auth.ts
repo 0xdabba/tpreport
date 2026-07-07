@@ -18,6 +18,7 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findUnique({
           where: { email: credentials.email },
+          include: { firm: { select: { id: true, name: true, plan: true } } },
         });
 
         if (!user) {
@@ -37,8 +38,18 @@ export const authOptions: NextAuthOptions = {
           id: user.id,
           name: user.name,
           email: user.email,
-          firm: user.firm,
+          firm: user.firm.name,
+          firmId: user.firmId,
+          firmRole: user.firmRole,
           role: user.role,
+        } as {
+          id: string;
+          name: string | null;
+          email: string;
+          firm: string;
+          firmId: string;
+          firmRole: string;
+          role: string;
         };
       },
     }),
@@ -50,19 +61,35 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.firm = (user as { firm?: string | null }).firm;
-        token.role = (user as { role?: string }).role;
+        const u = user as unknown as {
+          id: string;
+          firm?: string | null;
+          firmId?: string;
+          firmRole?: string;
+          role?: string;
+        };
+        token.id = u.id;
+        token.firm = u.firm;
+        token.firmId = u.firmId;
+        token.firmRole = u.firmRole;
+        token.role = u.role;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as { id?: string }).id = token.id as string;
-        (session.user as { firm?: string | null }).firm = token.firm as
-          | string
-          | null;
-        (session.user as { role?: string }).role = token.role as string;
+        const su = session.user as {
+          id?: string;
+          firm?: string | null;
+          firmId?: string;
+          firmRole?: string;
+          role?: string;
+        };
+        su.id = token.id as string;
+        su.firm = token.firm as string | null;
+        su.firmId = token.firmId as string;
+        su.firmRole = token.firmRole as string;
+        su.role = token.role as string;
       }
       return session;
     },

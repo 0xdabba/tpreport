@@ -16,6 +16,10 @@ import {
   Menu,
   X,
   ChevronLeft,
+  Scale,
+  Radar,
+  Handshake,
+  Landmark,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -26,11 +30,15 @@ interface SidebarProps {
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/screener", label: "Screener", icon: Radar },
+  { href: "/dashboard/proposals", label: "Proposals", icon: Handshake },
   { href: "/dashboard/clients", label: "Clients", icon: Users },
   { href: "/dashboard/entities", label: "Entities", icon: Building2 },
   { href: "/dashboard/analysis", label: "Analysis", icon: BarChart3 },
+  { href: "/dashboard/benchmarking", label: "Benchmarking", icon: Scale },
   { href: "/dashboard/documents", label: "Documents", icon: FileText },
   { href: "/dashboard/compliance", label: "Compliance", icon: ShieldCheck },
+  { href: "/dashboard/caselaw", label: "Case Law", icon: Landmark },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

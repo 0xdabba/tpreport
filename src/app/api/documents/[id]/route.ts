@@ -1,23 +1,19 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getFirmSession } from "@/lib/session";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as { id: string }).id;
     const { id } = await params;
 
     const document = await prisma.document.findFirst({
-      where: { id, client: { userId } },
+      where: { id, client: { firmId: s.firmId } },
       include: {
         client: true,
         analysis: {
@@ -29,6 +25,13 @@ export async function GET(
               },
             },
           },
+        },
+        benchmarkingSet: { select: { id: true, name: true, sourceDb: true } },
+        submittedBy: { select: { id: true, name: true } },
+        approvedBy: { select: { id: true, name: true } },
+        comments: {
+          include: { user: { select: { id: true, name: true } } },
+          orderBy: { createdAt: "asc" },
         },
       },
     });
@@ -49,29 +52,32 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as { id: string }).id;
     const { id } = await params;
     const body = await request.json();
 
-    // Verify ownership
     const existing = await prisma.document.findFirst({
-      where: { id, client: { userId } },
+      where: { id, client: { firmId: s.firmId } },
     });
 
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Content edits are locked once a document is final
+    if (existing.status === "final" && body.content !== undefined) {
+      return NextResponse.json(
+        { error: "Final documents are locked. Move it back to draft via the review flow to edit." },
+        { status: 403 }
+      );
+    }
+
     const updated = await prisma.document.update({
       where: { id },
       data: {
         content: body.content ?? existing.content,
-        status: body.status ?? existing.status,
         name: body.name ?? existing.name,
       },
       include: {
@@ -91,16 +97,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const userId = (session.user as { id: string }).id;
     const { id } = await params;
 
     const existing = await prisma.document.findFirst({
-      where: { id, client: { userId } },
+      where: { id, client: { firmId: s.firmId } },
     });
 
     if (!existing) {

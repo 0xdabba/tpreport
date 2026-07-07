@@ -1,12 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
+  );
+}
+
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite") || "";
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -48,6 +58,7 @@ export default function RegisterPage() {
           password: formData.password,
           firm: formData.firm,
           phone: formData.phone,
+          inviteToken: inviteToken || undefined,
         }),
       });
 
@@ -82,10 +93,12 @@ export default function RegisterPage() {
   return (
     <div>
       <h2 className="mb-1 text-xl font-semibold text-secondary">
-        Create your account
+        {inviteToken ? "Join your firm" : "Create your account"}
       </h2>
       <p className="mb-6 text-sm text-muted">
-        Get started with TP Report for your firm
+        {inviteToken
+          ? "You've been invited — use the email the invite was sent to"
+          : "Get started with TP Report for your firm — 14-day free trial"}
       </p>
 
       {error && (
@@ -131,22 +144,25 @@ export default function RegisterPage() {
           />
         </div>
 
-        <div>
-          <label
-            htmlFor="firm"
-            className="mb-1.5 block text-sm font-medium text-secondary"
-          >
-            Firm name
-          </label>
-          <input
-            id="firm"
-            type="text"
-            value={formData.firm}
-            onChange={(e) => updateField("firm", e.target.value)}
-            placeholder="Kumar & Associates"
-            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-secondary placeholder:text-muted/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
-          />
-        </div>
+        {!inviteToken && (
+          <div>
+            <label
+              htmlFor="firm"
+              className="mb-1.5 block text-sm font-medium text-secondary"
+            >
+              Firm name
+            </label>
+            <input
+              id="firm"
+              type="text"
+              value={formData.firm}
+              onChange={(e) => updateField("firm", e.target.value)}
+              required
+              placeholder="Kumar & Associates"
+              className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-secondary placeholder:text-muted/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
+            />
+          </div>
+        )}
 
         <div>
           <label

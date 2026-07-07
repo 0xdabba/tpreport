@@ -7,25 +7,87 @@ datasource db {
   provider = "sqlite"
 }
 
+// ---------------------------------------------------------------------------
+// Firm & users (multi-seat)
+// ---------------------------------------------------------------------------
+
+model Firm {
+  id             String    @id @default(cuid())
+  name           String
+  // Letterhead / branding
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  pincode        String?
+  email          String?
+  phone          String?
+  website        String?
+  frn            String? // ICAI Firm Registration Number
+  logoText       String? // short mark shown on letterhead, e.g. "S&A"
+  brandColor     String? @default("#C2410C")
+  // Billing
+  plan           String    @default("TRIAL") // TRIAL | STARTER | PROFESSIONAL | FIRM
+  planExpiresAt  DateTime?
+  razorpayCustomerId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  users          User[]
+  invites        Invite[]
+  clients        Client[]
+  proposals      Proposal[]
+  payments       Payment[]
+  benchmarkingSets BenchmarkingSet[]
+  screenerRuns   ScreenerRun[]
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
   email         String    @unique
   password      String
-  firm          String?
   phone         String?
-  role          String    @default("ca")
+  role          String    @default("ca") // legacy field, kept for compat
+  firmId        String
+  firm          Firm      @relation(fields: [firmId], references: [id])
+  firmRole      String    @default("PARTNER") // PARTNER | MANAGER | STAFF
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  clients       Client[]
+  clients       Client[] // creator attribution
+  documentsSubmitted Document[] @relation("DocSubmitter")
+  documentsApproved  Document[] @relation("DocApprover")
+  comments      DocComment[]
 }
+
+model Invite {
+  id         String    @id @default(cuid())
+  email      String
+  firmRole   String    @default("STAFF")
+  token      String    @unique
+  firmId     String
+  firm       Firm      @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Clients & group structure
+// ---------------------------------------------------------------------------
 
 model Client {
   id            String    @id @default(cuid())
   name          String
   industry      String?
   description   String?
-  userId        String
+  pan           String?
+  cin           String?
+  turnover      Float? // standalone turnover (INR)
+  groupRevenue  Float? // consolidated group revenue (INR) — drives MF/CbCR applicability
+  hasIntlTxn    Boolean   @default(true)
+  hasSDT        Boolean   @default(false)
+  firmId        String
+  firm          Firm      @relation(fields: [firmId], references: [id])
+  userId        String // created by
   user          User      @relation(fields: [userId], references: [id])
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -33,6 +95,10 @@ model Client {
   analyses      FunctionalAnalysis[]
   documents     Document[]
   alerts        ComplianceAlert[]
+  deadlines     Deadline[]
+  benchmarkingSets BenchmarkingSet[]
+  portalTokens  PortalToken[]
+  proposals     Proposal[]
 }
 
 model Entity {
@@ -91,19 +157,49 @@ model FunctionalAnalysis {
   updatedAt     DateTime  @updatedAt
 }
 
+// ---------------------------------------------------------------------------
+// Documents & review workflow
+// ---------------------------------------------------------------------------
+
 model Document {
   id            String    @id @default(cuid())
   name          String
   type          String
-  status        String    @default("draft")
+  status        String    @default("draft") // draft | in_review | approved | final
   content       String?
+  financialYear String?
   clientId      String
   client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   analysisId    String?
   analysis      FunctionalAnalysis? @relation(fields: [analysisId], references: [id])
+  benchmarkingSetId String?
+  benchmarkingSet   BenchmarkingSet? @relation(fields: [benchmarkingSetId], references: [id])
+  submittedById String?
+  submittedBy   User?     @relation("DocSubmitter", fields: [submittedById], references: [id])
+  submittedAt   DateTime?
+  approvedById  String?
+  approvedBy    User?     @relation("DocApprover", fields: [approvedById], references: [id])
+  approvedAt    DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  comments      DocComment[]
 }
+
+model DocComment {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  sectionId  String? // null = whole-document comment
+  body       String
+  resolvedAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Compliance: alerts + statutory deadlines
+// ---------------------------------------------------------------------------
 
 model ComplianceAlert {
   id            String    @id @default(cuid())
@@ -115,4 +211,189 @@ model ComplianceAlert {
   client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   createdAt     DateTime  @default(now())
   resolvedAt    DateTime?
+}
+
+model Deadline {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  kind        String // FORM_3CEB | MASTER_FILE_3CEAA | CBCR_3CEAD | CBCR_INTIMATION_3CEAC | ITR_TP | SAFE_HARBOUR_3CEFA
+  label       String
+  financialYear String // e.g. "2025-26" (the FY being reported)
+  dueDate     DateTime
+  status      String    @default("upcoming") // upcoming | done | overdue | na
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([clientId, kind, financialYear])
+}
+
+model ReminderLog {
+  id         String   @id @default(cuid())
+  deadlineId String
+  offsetDays Int // 30 / 7 / 1
+  sentTo     String
+  sentAt     DateTime @default(now())
+
+  @@unique([deadlineId, offsetDays, sentTo])
+}
+
+// ---------------------------------------------------------------------------
+// Benchmarking (real comparables — imported or built-in)
+// ---------------------------------------------------------------------------
+
+model BenchmarkingSet {
+  id            String   @id @default(cuid())
+  name          String
+  firmId        String
+  firm          Firm     @relation(fields: [firmId], references: [id])
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  financialYear String
+  testedParty   String?
+  pli           String   @default("OP/TC") // OP/TC | OP/OR | Berry ratio
+  testedMargin  Float? // tested party's actual PLI value (%)
+  sourceDb      String // capitaline | ace | prowess | builtin | manual
+  sourceFile    String? // original filename
+  searchSteps   String? // JSON: search funnel [{step, count}]
+  turnoverMin   Float?
+  turnoverMax   Float?
+  rptThreshold  Float    @default(25)
+  status        String   @default("draft") // draft | screened | final
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  comparables   ComparableCompany[]
+  documents     Document[]
+}
+
+model ComparableCompany {
+  id           String  @id @default(cuid())
+  setId        String
+  set          BenchmarkingSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  name         String
+  cin          String?
+  businessDesc String?
+  // three most recent FYs, oldest first; margins are PLI % values
+  fyLabels     String? // JSON ["FY23","FY24","FY25"]
+  revenues     String? // JSON [num,num,num] (INR crore)
+  opProfits    String? // JSON [num,num,num] (INR crore)
+  margins      String? // JSON [num,num,num] (%)
+  wavgMargin   Float?
+  rptPct       Float?
+  accepted     Boolean @default(true)
+  rejectReason String? // e.g. "RPT 41% > 25% threshold", "Persistent losses"
+  screenNote   String? // AI qualitative note
+  createdAt    DateTime @default(now())
+}
+
+// Built-in comparables dataset (Phase 3 — MCA XBRL pipeline)
+model CompanyFinancials {
+  id           String   @id @default(cuid())
+  cin          String?  @unique
+  name         String
+  nicCode      String?
+  industry     String?
+  businessDesc String?
+  fyLabels     String? // JSON ["FY23","FY24","FY25"]
+  revenues     String? // JSON (INR crore)
+  opProfits    String? // JSON (INR crore)
+  margins      String? // JSON (%)
+  rptPct       Float?
+  dataSource   String   @default("MCA_XBRL") // MCA_XBRL | MANUAL | DEMO
+  sourceAsOf   DateTime?
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Practice builder: screener, proposals, leads
+// ---------------------------------------------------------------------------
+
+model ScreenerRun {
+  id        String   @id @default(cuid())
+  firmId    String
+  firm      Firm     @relation(fields: [firmId], references: [id], onDelete: Cascade)
+  fileName  String?
+  rowsJson  String // JSON array of screened rows with flags + fee estimates
+  summary   String? // JSON {total, need3ceb, needMf, needCbcr, shEligible, feePotential}
+  createdAt DateTime @default(now())
+}
+
+model Proposal {
+  id            String   @id @default(cuid())
+  firmId        String
+  firm          Firm     @relation(fields: [firmId], references: [id])
+  clientId      String?
+  client        Client?  @relation(fields: [clientId], references: [id])
+  prospectName  String
+  status        String   @default("draft") // draft | sent | accepted | rejected
+  scopeJson     String? // JSON line items [{deliverable, qty, fee}]
+  totalFee      Float?
+  content       String? // generated proposal text
+  engagementLetter String? // generated engagement letter text
+  financialYear String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  email     String
+  name      String?
+  phone     String?
+  source    String // safe-harbour-checker | new-act-guide
+  payload   String? // JSON of what they entered / result shown
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id          String   @id @default(cuid())
+  firmId      String
+  firm        Firm     @relation(fields: [firmId], references: [id])
+  plan        String
+  amount      Float // INR
+  status      String   @default("created") // created | paid | failed
+  provider    String   @default("MOCK") // MOCK | RAZORPAY
+  providerRef String? // razorpay payment link / payment id
+  periodStart DateTime?
+  periodEnd   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge: case law library
+// ---------------------------------------------------------------------------
+
+model CaseLaw {
+  id        String   @id @default(cuid())
+  name      String
+  citation  String?
+  forum     String? // ITAT bench / HC / SC
+  year      Int?
+  issueTags String? // comma-separated: "AMP expenditure,bright line"
+  method    String? // related TP method if any
+  holding   String // summary of the holding (clearly a summary, not full text)
+  fullTextUrl String?
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Client portal (white-label)
+// ---------------------------------------------------------------------------
+
+model PortalToken {
+  id        String    @id @default(cuid())
+  clientId  String
+  client    Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  label     String?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 }

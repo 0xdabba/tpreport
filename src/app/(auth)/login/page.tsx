@@ -12,15 +12,14 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  const [demoLoading, setDemoLoading] = useState<string | null>(null);
 
+  const doSignIn = async (mail: string, pass: string) => {
+    setError("");
     try {
       const result = await signIn("credentials", {
-        email,
-        password,
+        email: mail,
+        password: pass,
         redirect: false,
       });
 
@@ -32,9 +31,20 @@ export default function LoginPage() {
       }
     } catch {
       setError("An unexpected error occurred");
-    } finally {
-      setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    await doSignIn(email, password);
+    setLoading(false);
+  };
+
+  const handleDemoLogin = async (mail: string) => {
+    setDemoLoading(mail);
+    await doSignIn(mail, "demo1234");
+    setDemoLoading(null);
   };
 
   return (
@@ -122,6 +132,45 @@ export default function LoginPage() {
           )}
         </button>
       </form>
+
+      {/* Demo one-click logins */}
+      <div className="mt-6">
+        <div className="relative mb-4">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-background px-3 text-xs text-muted">
+              or try the demo
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => handleDemoLogin("partner@demo.test")}
+            disabled={demoLoading !== null}
+            className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {demoLoading === "partner@demo.test"
+              ? "Signing in..."
+              : "Demo as Partner"}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDemoLogin("staff@demo.test")}
+            disabled={demoLoading !== null}
+            className="rounded-lg border border-border bg-surface px-3 py-2.5 text-sm font-medium text-secondary transition-colors hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {demoLoading === "staff@demo.test"
+              ? "Signing in..."
+              : "Demo as Staff"}
+          </button>
+        </div>
+        <p className="mt-2 text-center text-xs text-muted/70">
+          Demo firm with seeded clients, benchmarking set, and deadlines
+        </p>
+      </div>
 
       <p className="mt-6 text-center text-sm text-muted">
         Don&apos;t have an account?{" "}

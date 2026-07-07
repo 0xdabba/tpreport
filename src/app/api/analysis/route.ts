@@ -1,20 +1,18 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getFirmSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const s = await getFirmSession();
+    if (!s) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const userId = (session.user as { id: string }).id;
+    const firmId = s.firmId;
 
     const analyses = await prisma.functionalAnalysis.findMany({
       where: {
-        client: { userId },
+        client: { firmId },
       },
       include: {
         client: {
@@ -46,12 +44,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const s = await getFirmSession();
+    if (!s) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const userId = (session.user as { id: string }).id;
+    const firmId = s.firmId;
     const body = await request.json();
     const {
       clientId,
@@ -74,7 +71,7 @@ export async function POST(request: Request) {
 
     // Verify client belongs to user
     const client = await prisma.client.findFirst({
-      where: { id: clientId, userId },
+      where: { id: clientId, firmId },
     });
 
     if (!client) {

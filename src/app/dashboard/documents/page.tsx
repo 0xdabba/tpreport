@@ -89,7 +89,8 @@ function getDocTypeLabel(type: string) {
 function statusBadge(status: string) {
   const styles: Record<string, string> = {
     draft: "bg-surface-alt text-muted",
-    review: "bg-warning/10 text-warning",
+    in_review: "bg-warning/10 text-warning",
+    approved: "bg-primary/10 text-primary",
     final: "bg-success/10 text-success",
   };
   return styles[status] || styles.draft;
@@ -115,21 +116,43 @@ export default function DocumentsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [modalError, setModalError] = useState("");
+  const [benchSets, setBenchSets] = useState<
+    { id: string; name: string; clientId: string; financialYear: string }[]
+  >([]);
   const [formData, setFormData] = useState({
     type: "",
     clientId: "",
     name: "",
     financialYear: "2025-26",
+    benchmarkingSetId: "",
   });
 
   const fetchData = useCallback(async () => {
     try {
-      const [docsRes, clientsRes] = await Promise.all([
+      const [docsRes, clientsRes, benchRes] = await Promise.all([
         fetch("/api/documents"),
         fetch("/api/clients"),
+        fetch("/api/benchmarking"),
       ]);
       if (docsRes.ok) setDocuments(await docsRes.json());
       if (clientsRes.ok) setClients(await clientsRes.json());
+      if (benchRes.ok) {
+        const sets = (await benchRes.json()) as {
+          id: string;
+          name: string;
+          financialYear: string;
+          client: { id: string };
+        }[];
+        setBenchSets(
+          sets.map((s) => ({
+            id: s.id,
+            name: s.name,
+            clientId: s.client.id,
+            financialYear: s.financialYear,
+          }))
+        );
+      }
     } catch (error) {
       console.error("Failed to fetch data:", error);
     } finally {
@@ -144,6 +167,7 @@ export default function DocumentsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setModalError("");
     try {
       const docType = DOCUMENT_TYPES.find((d) => d.value === formData.type);
       const client = clients.find((c) => c.id === formData.clientId);
@@ -156,32 +180,27 @@ export default function DocumentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          benchmarkingSetId: formData.benchmarkingSetId || undefined,
           name,
         }),
       });
       if (res.ok) {
         await fetchData();
         setShowModal(false);
-        setFormData({ type: "", clientId: "", name: "", financialYear: "2025-26" });
+        setFormData({ type: "", clientId: "", name: "", financialYear: "2025-26", benchmarkingSetId: "" });
+      } else {
+        setModalError((await res.json()).error || "Generation failed");
       }
     } catch (error) {
       console.error("Failed to create document:", error);
+      setModalError("Generation failed");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDownload = (doc: Document) => {
-    if (!doc.content) return;
-    const blob = new Blob([doc.content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = window.document.createElement("a");
-    a.href = url;
-    a.download = `${doc.name.replace(/[^a-zA-Z0-9\-_ ]/g, "")}.txt`;
-    window.document.body.appendChild(a);
-    a.click();
-    window.document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownload = (doc: Document, format: "docx" | "pdf") => {
+    window.location.href = `/api/documents/${doc.id}/export?format=${format}`;
   };
 
   const filtered = documents.filter((d) => {
@@ -201,10 +220,11 @@ export default function DocumentsPage() {
       year: "numeric",
     });
 
-  const counts = {
+  const counts: Record<string, number> = {
     all: documents.length,
     draft: documents.filter((d) => d.status === "draft").length,
-    review: documents.filter((d) => d.status === "review").length,
+    in_review: documents.filter((d) => d.status === "in_review").length,
+    approved: documents.filter((d) => d.status === "approved").length,
     final: documents.filter((d) => d.status === "final").length,
   };
 
@@ -244,7 +264,7 @@ export default function DocumentsPage() {
           </div>
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-muted" />
-            {(["all", "draft", "review", "final"] as const).map((s) => (
+            {(["all", "draft", "in_review", "approved", "final"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
@@ -254,7 +274,7 @@ export default function DocumentsPage() {
                     : "bg-surface border border-border text-muted hover:text-foreground"
                 }`}
               >
-                {s} ({counts[s]})
+                {s.replace("_", " ")} ({counts[s]})
               </button>
             ))}
           </div>
@@ -336,11 +356,20 @@ export default function DocumentsPage() {
                     Open
                   </button>
                   <button
-                    onClick={() => handleDownload(doc)}
+                    onClick={() => handleDownload(doc, "docx")}
                     disabled={!doc.content}
-                    className="flex items-center justify-center gap-2 px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm font-medium text-foreground hover:bg-border/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    title="Download DOCX (firm letterhead)"
+                    className="flex items-center justify-center gap-1 px-3 py-2 bg-surface-alt border border-border rounded-lg text-xs font-medium text-foreground hover:bg-border/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-3.5 h-3.5" /> DOCX
+                  </button>
+                  <button
+                    onClick={() => handleDownload(doc, "pdf")}
+                    disabled={!doc.content}
+                    title="Download PDF"
+                    className="flex items-center justify-center gap-1 px-3 py-2 bg-surface-alt border border-border rounded-lg text-xs font-medium text-foreground hover:bg-border/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" /> PDF
                   </button>
                 </div>
               </div>
@@ -484,6 +513,52 @@ export default function DocumentsPage() {
                   <option value="2022-23">FY 2022-23</option>
                 </select>
               </div>
+
+              {/* Benchmarking set — required for benchmarking reports, optional grounding for TP studies */}
+              {(formData.type === "benchmarking" || formData.type === "tp-study") && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">
+                    Comparable set{" "}
+                    {formData.type === "benchmarking" ? (
+                      <span className="text-danger">*</span>
+                    ) : (
+                      <span className="text-xs text-muted">(optional — grounds the economic analysis)</span>
+                    )}
+                  </label>
+                  <select
+                    required={formData.type === "benchmarking"}
+                    value={formData.benchmarkingSetId}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, benchmarkingSetId: e.target.value }))
+                    }
+                    className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+                  >
+                    <option value="">
+                      {formData.type === "benchmarking" ? "Select comparable set" : "— None —"}
+                    </option>
+                    {benchSets
+                      .filter((s) => !formData.clientId || s.clientId === formData.clientId)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} (FY {s.financialYear})
+                        </option>
+                      ))}
+                  </select>
+                  {formData.type === "benchmarking" &&
+                    benchSets.filter((s) => !formData.clientId || s.clientId === formData.clientId).length === 0 && (
+                      <p className="text-xs text-warning mt-1">
+                        No comparable sets for this client — create one under Benchmarking first.
+                        Reports are only generated from real, screened comparables.
+                      </p>
+                    )}
+                </div>
+              )}
+
+              {modalError && (
+                <div className="p-3 bg-danger/10 border border-danger/30 rounded-lg text-sm text-danger">
+                  {modalError}
+                </div>
+              )}
 
               {/* Custom Name */}
               <div>

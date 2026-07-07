@@ -20,14 +20,27 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+interface DocComment {
+  id: string;
+  body: string;
+  sectionId: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  user: { id: string; name: string | null };
+}
+
 interface DocumentData {
   id: string;
   name: string;
   type: string;
   status: string;
   content: string | null;
+  financialYear: string | null;
   client: { id: string; name: string; industry: string | null };
   analysis: { id: string; status: string } | null;
+  submittedBy: { id: string; name: string | null } | null;
+  approvedBy: { id: string; name: string | null } | null;
+  comments: DocComment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -256,38 +269,49 @@ export default function DocumentViewerPage() {
     }
   }
 
-  const handleStatusChange = async (newStatus: string) => {
+  const [reviewError, setReviewError] = useState("");
+  const [newComment, setNewComment] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+
+  const reviewAction = async (action: string) => {
     setSaving(true);
+    setReviewError("");
     try {
-      const res = await fetch(`/api/documents/${docId}`, {
-        method: "PUT",
+      const res = await fetch(`/api/documents/${docId}/review`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ action }),
       });
       if (res.ok) {
-        const updated = await res.json();
-        setDoc((prev) =>
-          prev ? { ...prev, status: updated.status } : prev
-        );
+        await fetchDocument();
+      } else {
+        setReviewError((await res.json()).error || "Action failed");
       }
-    } catch (error) {
-      console.error("Status update failed:", error);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDownload = () => {
-    if (!doc?.content) return;
-    const blob = new Blob([doc.content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = window.document.createElement("a");
-    a.href = url;
-    a.download = `${doc.name.replace(/[^a-zA-Z0-9\-_ ]/g, "")}.txt`;
-    window.document.body.appendChild(a);
-    a.click();
-    window.document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const postComment = async () => {
+    if (!newComment.trim()) return;
+    setPostingComment(true);
+    try {
+      const res = await fetch(`/api/documents/${docId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: newComment }),
+      });
+      if (res.ok) {
+        setNewComment("");
+        await fetchDocument();
+      }
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const handleDownload = (format: "docx" | "pdf") => {
+    window.location.href = `/api/documents/${docId}/export?format=${format}`;
   };
 
   const toggleSection = (id: string) => {
@@ -359,25 +383,78 @@ export default function DocumentViewerPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {/* Status selector */}
-              <select
-                value={doc.status}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className="px-3 py-2 bg-surface border border-border rounded-lg text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer"
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              {/* Review workflow status + actions */}
+              <span
+                className={`text-xs px-2.5 py-1.5 rounded-full font-medium capitalize ${
+                  doc.status === "final"
+                    ? "bg-success/10 text-success"
+                    : doc.status === "approved"
+                      ? "bg-primary/10 text-primary"
+                      : doc.status === "in_review"
+                        ? "bg-warning/10 text-warning"
+                        : "bg-surface-alt text-muted"
+                }`}
               >
-                <option value="draft">Draft</option>
-                <option value="review">In Review</option>
-                <option value="final">Final</option>
-              </select>
+                {doc.status.replace("_", " ")}
+              </span>
+
+              {doc.status === "draft" && (
+                <button
+                  onClick={() => reviewAction("submit")}
+                  className="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark cursor-pointer"
+                >
+                  Submit for review
+                </button>
+              )}
+              {doc.status === "in_review" && (
+                <>
+                  <button
+                    onClick={() => reviewAction("approve")}
+                    className="px-3 py-2 bg-success/10 text-success border border-success/30 rounded-lg text-sm font-medium hover:bg-success/20 cursor-pointer"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => reviewAction("request_changes")}
+                    className="px-3 py-2 bg-warning/10 text-warning border border-warning/30 rounded-lg text-sm font-medium hover:bg-warning/20 cursor-pointer"
+                  >
+                    Request changes
+                  </button>
+                </>
+              )}
+              {doc.status === "approved" && (
+                <button
+                  onClick={() => reviewAction("finalize")}
+                  className="px-3 py-2 bg-success text-white rounded-lg text-sm font-medium hover:opacity-90 cursor-pointer"
+                >
+                  Mark final
+                </button>
+              )}
+              {(doc.status === "approved" || doc.status === "final") && (
+                <button
+                  onClick={() => reviewAction("reopen")}
+                  className="px-3 py-2 bg-surface border border-border rounded-lg text-sm font-medium text-muted hover:text-foreground cursor-pointer"
+                >
+                  Reopen
+                </button>
+              )}
 
               <button
-                onClick={handleDownload}
+                onClick={() => handleDownload("docx")}
                 disabled={!doc.content}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-lg text-sm font-medium text-foreground hover:bg-surface-alt transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <Download className="w-4 h-4" />
-                Download
+                DOCX
+              </button>
+              <button
+                onClick={() => handleDownload("pdf")}
+                disabled={!doc.content}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-lg text-sm font-medium text-foreground hover:bg-surface-alt transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                PDF
               </button>
 
               {saving && (
@@ -388,6 +465,18 @@ export default function DocumentViewerPage() {
               )}
             </div>
           </div>
+
+          {reviewError && (
+            <div className="mt-3 p-3 bg-danger/10 border border-danger/30 rounded-lg text-sm text-danger">
+              {reviewError}
+            </div>
+          )}
+          {(doc.submittedBy || doc.approvedBy) && (
+            <div className="mt-3 text-xs text-muted">
+              {doc.submittedBy && <>Submitted by {doc.submittedBy.name || "team member"}. </>}
+              {doc.approvedBy && <>Approved by {doc.approvedBy.name || "reviewer"}.</>}
+            </div>
+          )}
         </div>
 
         {/* AI Generation Badge */}
@@ -609,6 +698,55 @@ export default function DocumentViewerPage() {
             )}
           </div>
         )}
+
+        {/* Review comments */}
+        <div className="mt-8 bg-surface border border-border rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-foreground mb-4">
+            Review comments ({doc.comments.length})
+          </h3>
+          <div className="space-y-3 mb-4">
+            {doc.comments.length === 0 && (
+              <p className="text-sm text-muted">No comments yet.</p>
+            )}
+            {doc.comments.map((c) => (
+              <div key={c.id} className="flex gap-3">
+                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-medium flex-shrink-0">
+                  {(c.user.name || "U").charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs text-muted mb-0.5">
+                    {c.user.name || "Team member"} ·{" "}
+                    {new Date(c.createdAt).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    {c.sectionId && <> · on section {c.sectionId}</>}
+                  </div>
+                  <p className="text-sm text-foreground">{c.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && postComment()}
+              placeholder="Add a review comment..."
+              className="flex-1 px-3 py-2.5 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <button
+              onClick={postComment}
+              disabled={postingComment || !newComment.trim()}
+              className="px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50 cursor-pointer"
+            >
+              {postingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : "Comment"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

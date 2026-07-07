@@ -14,18 +14,29 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-async function getDashboardStats(userId: string) {
-  const [clientCount, entityCount, pendingDocCount, alertCount] =
+async function getDashboardStats(firmId: string) {
+  const now = new Date();
+  const [clientCount, entityCount, pendingDocCount, deadlineCount, upcomingDeadlines] =
     await Promise.all([
-      prisma.client.count({ where: { userId } }),
+      prisma.client.count({ where: { firmId } }),
       prisma.entity.count({
-        where: { client: { userId } },
+        where: { client: { firmId } },
       }),
       prisma.document.count({
-        where: { client: { userId }, status: "draft" },
+        where: { client: { firmId }, status: { in: ["draft", "in_review"] } },
       }),
-      prisma.complianceAlert.count({
-        where: { client: { userId }, status: "active" },
+      prisma.deadline.count({
+        where: {
+          client: { firmId },
+          status: { in: ["upcoming", "overdue"] },
+          dueDate: { lte: new Date(now.getTime() + 60 * 86400000) },
+        },
+      }),
+      prisma.deadline.findMany({
+        where: { client: { firmId }, status: { in: ["upcoming", "overdue"] } },
+        include: { client: { select: { name: true } } },
+        orderBy: { dueDate: "asc" },
+        take: 6,
       }),
     ]);
 
@@ -33,55 +44,18 @@ async function getDashboardStats(userId: string) {
     clients: clientCount,
     entities: entityCount,
     pendingDocs: pendingDocCount,
-    alerts: alertCount,
+    alerts: deadlineCount,
+    upcomingDeadlines,
   };
 }
 
-const recentActivity = [
-  {
-    id: 1,
-    action: "Created new client",
-    detail: "Tata Consultancy Services Ltd",
-    time: "2 hours ago",
-    type: "client",
-  },
-  {
-    id: 2,
-    action: "Generated Form 3CEB",
-    detail: "Infosys BPO Limited",
-    time: "5 hours ago",
-    type: "document",
-  },
-  {
-    id: 3,
-    action: "Completed functional analysis",
-    detail: "Wipro Technologies",
-    time: "1 day ago",
-    type: "analysis",
-  },
-  {
-    id: 4,
-    action: "New compliance alert",
-    detail: "Due date approaching for FY 2024-25",
-    time: "2 days ago",
-    type: "alert",
-  },
-  {
-    id: 5,
-    action: "Added entity",
-    detail: "Reliance Industries - Singapore Branch",
-    time: "3 days ago",
-    type: "entity",
-  },
-];
-
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  const userId = (session?.user as { id?: string })?.id;
+  const firmId = (session?.user as { firmId?: string })?.firmId;
 
-  const stats = userId
-    ? await getDashboardStats(userId)
-    : { clients: 0, entities: 0, pendingDocs: 0, alerts: 0 };
+  const stats = firmId
+    ? await getDashboardStats(firmId)
+    : { clients: 0, entities: 0, pendingDocs: 0, alerts: 0, upcomingDeadlines: [] };
 
   const statCards = [
     {
@@ -109,7 +83,7 @@ export default async function DashboardPage() {
       href: "/dashboard/documents",
     },
     {
-      label: "Compliance Alerts",
+      label: "Deadlines (60 days)",
       value: stats.alerts,
       icon: AlertTriangle,
       color: "text-danger",
@@ -145,13 +119,10 @@ export default async function DashboardPage() {
     },
   ];
 
-  const activityIcons: Record<string, typeof Users> = {
-    client: Users,
-    document: FileText,
-    analysis: BarChart3,
-    alert: AlertTriangle,
-    entity: Building2,
-  };
+  const fmtDate = (d: Date) =>
+    new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  const daysLeft = (d: Date) =>
+    Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
 
   return (
     <div className="space-y-8">
@@ -195,35 +166,46 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Recent Activity */}
+        {/* Upcoming deadlines */}
         <div className="lg:col-span-2 rounded-xl border border-border bg-surface">
           <div className="flex items-center justify-between border-b border-border px-6 py-4">
             <h2 className="text-base font-semibold text-secondary">
-              Recent Activity
+              Upcoming statutory deadlines
             </h2>
-            <span className="text-xs text-muted">Last 7 days</span>
+            <Link href="/dashboard/compliance" className="text-xs text-primary hover:underline">
+              View all
+            </Link>
           </div>
           <div className="divide-y divide-border">
-            {recentActivity.map((activity) => {
-              const Icon = activityIcons[activity.type] || Clock;
+            {stats.upcomingDeadlines.length === 0 && (
+              <div className="px-6 py-8 text-sm text-muted">
+                No tracked deadlines yet — open{" "}
+                <Link href="/dashboard/compliance" className="text-primary hover:underline">
+                  Compliance
+                </Link>{" "}
+                and generate them from client data.
+              </div>
+            )}
+            {stats.upcomingDeadlines.map((d) => {
+              const left = daysLeft(d.dueDate);
               return (
-                <div
-                  key={activity.id}
-                  className="flex items-start gap-4 px-6 py-4"
-                >
+                <div key={d.id} className="flex items-start gap-4 px-6 py-4">
                   <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-surface-alt">
-                    <Icon className="h-4 w-4 text-muted" />
+                    <Clock className="h-4 w-4 text-muted" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-secondary">
-                      {activity.action}
-                    </p>
+                    <p className="text-sm font-medium text-secondary">{d.label}</p>
                     <p className="mt-0.5 truncate text-sm text-muted">
-                      {activity.detail}
+                      {d.client.name} · FY {d.financialYear}
                     </p>
                   </div>
-                  <span className="flex-shrink-0 text-xs text-muted">
-                    {activity.time}
+                  <span
+                    className={`flex-shrink-0 text-xs font-medium ${
+                      left < 0 ? "text-danger" : left <= 30 ? "text-warning" : "text-muted"
+                    }`}
+                  >
+                    {fmtDate(d.dueDate)}
+                    {left < 0 ? " · overdue" : ` · ${left}d`}
                   </span>
                 </div>
               );
@@ -275,8 +257,9 @@ export default async function DashboardPage() {
                   FY 2025-26 Deadlines
                 </p>
                 <p className="mt-1 text-xs text-muted">
-                  Form 3CEB due by November 30, 2026. Ensure all TP
-                  documentation is up to date.
+                  Form 3CEB due 31 October 2026; TP-case ITR and Form 3CEAA due
+                  30 November 2026. Generate per-client deadlines under
+                  Compliance.
                 </p>
               </div>
             </div>

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getFirmSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import {
   generateSection,
@@ -13,8 +12,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const s = await getFirmSession();
+    if (!s) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -25,8 +24,7 @@ export async function POST(
       );
     }
 
-    const userId = (session.user as { id: string }).id;
-    const { id } = await params;
+        const { id } = await params;
     const body = await request.json();
     const { sectionId, financialYear } = body;
 
@@ -39,7 +37,7 @@ export async function POST(
 
     // Fetch document with full context
     const document = await prisma.document.findFirst({
-      where: { id, client: { userId } },
+      where: { id, client: { firmId: s.firmId } },
       include: {
         client: true,
         analysis: true,
@@ -93,9 +91,9 @@ export async function POST(
       select: { content: true },
     });
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { firm: true },
+    const firm = await prisma.firm.findUnique({
+      where: { id: s.firmId },
+      select: { name: true },
     });
 
     const ctx: GenerationContext = {
@@ -138,7 +136,7 @@ export async function POST(
       pastReportExcerpts: pastReports
         .map((r) => r.content?.substring(0, 1500))
         .filter(Boolean) as string[],
-      firmName: user?.firm || undefined,
+      firmName: firm?.name || undefined,
     };
 
     const content = await generateSection(

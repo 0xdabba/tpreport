@@ -4,6 +4,8 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+const MODEL = process.env.LLM_MODEL || "claude-sonnet-5";
+
 const TP_SYSTEM_PROMPT = `You are a senior transfer pricing expert with 20+ years of experience advising Indian multinational groups. You specialize in Indian Income-tax Act (Sections 92 to 92F), CBDT Rules 10A to 10THD, OECD Transfer Pricing Guidelines, and Safe Harbour Rules under Rule 10TD.
 
 Your role is to generate professional, legally defensible transfer pricing documentation for Indian Chartered Accountants. Your output must:
@@ -14,6 +16,7 @@ Your role is to generate professional, legally defensible transfer pricing docum
 - Use Indian accounting terminology (Crores, Lakhs where appropriate for large figures)
 - Be factually grounded in the entity and transaction data provided
 - Never fabricate specific financial numbers not provided — use "[To be verified]" for missing data
+- NEVER invent comparable companies, margins, or benchmark figures. Comparables may ONLY come from the benchmarking data block when one is provided.
 - Always maintain arm's length principle as the central thesis`;
 
 export type DocumentSection = {
@@ -57,6 +60,36 @@ export type AnalysisData = {
   pricingMethod: string | null;
 };
 
+export type BenchmarkingContext = {
+  setName: string;
+  sourceDb: string;
+  pli: string;
+  testedParty: string | null;
+  testedMargin: number | null;
+  rptThreshold: number;
+  searchSteps: { step: string; count: number }[];
+  comparables: {
+    name: string;
+    businessDesc: string | null;
+    fyLabels: string[];
+    margins: (number | null)[];
+    wavgMargin: number | null;
+    rptPct: number | null;
+    accepted: boolean;
+    rejectReason: string | null;
+  }[];
+  range: {
+    method: "percentile" | "mean";
+    count: number;
+    p35: number | null;
+    median: number | null;
+    p65: number | null;
+    mean: number | null;
+    min: number | null;
+    max: number | null;
+  };
+};
+
 export type GenerationContext = {
   clientName: string;
   industry: string | null;
@@ -66,6 +99,7 @@ export type GenerationContext = {
   analysis: AnalysisData | null;
   pastReportExcerpts?: string[];
   firmName?: string;
+  benchmarking?: BenchmarkingContext;
 };
 
 // ---------------------------------------------------------------------------
@@ -184,6 +218,26 @@ Assets: ${ctx.analysis.assets || "Not specified"}
 Pricing Method: ${ctx.analysis.pricingMethod || "Not specified"}`;
   }
 
+  if (ctx.benchmarking) {
+    const b = ctx.benchmarking;
+    const accepted = b.comparables.filter((c) => c.accepted);
+    const rejected = b.comparables.filter((c) => !c.accepted);
+    block += `
+
+BENCHMARKING DATA (REAL — from ${b.sourceDb} export "${b.setName}"; use ONLY these companies, never invent others):
+PLI: ${b.pli} | Tested party: ${b.testedParty || "[To be verified]"} | Tested party margin: ${b.testedMargin ?? "[To be verified]"}%
+RPT threshold applied: ${b.rptThreshold}%
+Search funnel:
+${b.searchSteps.map((sst) => `- ${sst.step}: ${sst.count}`).join("\n")}
+ACCEPTED COMPARABLES (${accepted.length}):
+${accepted.map((c) => `- ${c.name} | ${c.businessDesc || "n/a"} | margins [${c.margins.map((m) => (m === null ? "n/a" : m + "%")).join(", ")}] | 3yr weighted avg ${c.wavgMargin ?? "n/a"}%${c.rptPct != null ? ` | RPT ${c.rptPct}%` : ""}`).join("\n")}
+REJECTED COMPANIES (${rejected.length}):
+${rejected.map((c) => `- ${c.name} — ${c.rejectReason || "rejected"}`).join("\n")}
+ARM'S LENGTH RANGE (pre-computed per Rule 10CA — quote these numbers exactly, do not recalculate):
+Method: ${b.range.method === "percentile" ? "35th–65th percentile (6+ comparables)" : "Arithmetic mean (fewer than 6 comparables)"} | n=${b.range.count}
+35th percentile: ${b.range.p35 ?? "n/a"}% | Median: ${b.range.median ?? "n/a"}% | 65th percentile: ${b.range.p65 ?? "n/a"}% | Mean: ${b.range.mean ?? "n/a"}%`;
+  }
+
   if (ctx.pastReportExcerpts && ctx.pastReportExcerpts.length > 0) {
     block += `
 
@@ -227,9 +281,9 @@ Base this on the entity FAR data provided. This is the most critical section —
       "economic-analysis": `Write the Economic Analysis section covering:
 7.1 Selection of Most Appropriate Method — justify the TP method selection under Rule 10C
 7.2 Selection of Tested Party — explain why the tested party was chosen (typically the least complex entity)
-7.3 Benchmarking Analysis — generate a realistic comparable company analysis with Indian companies, including search filters used (industry code, RPT filter <25%, persistent loss filter, turnover range)
+7.3 Benchmarking Analysis — ${ctx.benchmarking ? "present the REAL benchmarking data provided above (search funnel, accepted comparables, arm's length range). Quote the pre-computed range figures exactly." : 'state that a benchmarking study is to be conducted and mark the comparable analysis as "[Benchmarking study pending — attach benchmarking report]". Do NOT invent comparable companies or margin data.'}
 7.4 Comparability Adjustments — discuss any required adjustments
-Use the TNMM method with OP/TC or OP/OR as PLI unless the transaction data suggests otherwise. Generate 8-12 realistic comparable Indian companies with plausible margin data.`,
+NEVER fabricate comparable company names or margins — only use data explicitly provided.`,
       "alp-determination": `Write the Determination of Arm's Length Price section. Present the arm's length range (Q1, Median, Q3, Mean) from the benchmarking analysis, compare with the tested party's margin, and state the conclusion. Include a summary table.`,
       conclusion: `Write the Conclusion section. Summarise that based on the functional analysis, economic analysis, and benchmarking, the international transactions are at arm's length per Sections 92-92F. Keep it concise — 1-2 paragraphs.`,
     },
@@ -272,19 +326,15 @@ Use the TNMM method with OP/TC or OP/OR as PLI unless the transaction data sugge
       "executive-summary": `Write the Executive Summary of the Benchmarking Report. Summarise the transaction being tested, the method used, and the arm's length conclusion. 1-2 paragraphs.`,
       "tested-party": `Write the Tested Party Selection section. Explain why the tested party was selected (typically the least complex entity), describe its functional profile, and justify the selection under OECD guidelines.`,
       "method-selection": `Write the Most Appropriate Method selection section. Justify the MAM under Rule 10C, explain why other methods were rejected, and describe the PLI (Profit Level Indicator) selected — typically OP/TC or OP/OR for TNMM.`,
-      "search-process": `Write the Benchmarking Search Process section. Describe:
-- Database used (Prowess/Capitaline)
-- Search strategy (industry code → quantitative filters → qualitative screening)
-- Quantitative filters: RPT filter (<25%), persistent loss filter, turnover range, data availability
-- Number of companies at each step
-Generate a realistic search funnel with plausible numbers.`,
-      "comparable-set": `Write the Comparable Set and Results section. Generate 8-12 realistic Indian comparable companies appropriate for the client's industry. For each company provide:
-- Company name (use realistic but fictional Indian company names)
-- Brief business description
-- OP/TC or OP/OR margins for 3 financial years
-- 3-year weighted average
-Present as a formatted table. Ensure margins are realistic for the industry (typically 5-25% for services, 2-15% for distribution, 8-20% for IT).`,
-      "alp-range": `Write the Arm's Length Range and Conclusion section. Calculate Q1, Median, Q3, and Mean from the comparable set. Compare with the tested party's actual margin. State whether the transaction is at arm's length. If the margin falls outside the range, discuss potential adjustments under Section 92C.`,
+      "search-process": `Write the Benchmarking Search Process section using ONLY the real benchmarking data provided in the context. Describe:
+- Database used (as stated in the benchmarking data source)
+- Search strategy (industry screening → quantitative filters → qualitative screening)
+- Quantitative filters actually applied: RPT threshold, persistent loss filter, turnover range, data availability
+- The search funnel with the EXACT counts provided
+- The rejected companies with their actual rejection reasons (present as an accept/reject matrix table)
+Do NOT invent any companies or counts. If no benchmarking data is provided, state "[Benchmarking set required — create one in the Benchmarking module]".`,
+      "comparable-set": `Write the Comparable Set and Results section using ONLY the accepted comparables from the benchmarking data provided. Present as a formatted table: company name, business description, year-wise margins, 3-year weighted average. Quote every figure exactly as provided. Do NOT invent, rename, or adjust any company or number. If no benchmarking data is provided, state "[Benchmarking set required]".`,
+      "alp-range": `Write the Arm's Length Range and Conclusion section using the PRE-COMPUTED range in the benchmarking data (35th percentile, median, 65th percentile, mean — per Rule 10CA). Quote these numbers exactly; do not recalculate. Compare with the tested party's stated margin. State whether the transaction is at arm's length. If the margin falls outside the range, discuss potential adjustments under Section 92C. Note the applicable method (percentile range for 6+ comparables; arithmetic mean with the notified tolerance band otherwise).`,
     },
   };
 
@@ -293,7 +343,7 @@ Present as a formatted table. Ensure margins are realistic for the industry (typ
     `Write the "${sectionTitle}" section for a ${docType} document. Use the client and transaction data provided.`;
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: MODEL,
     max_tokens: 4000,
     system: TP_SYSTEM_PROMPT,
     messages: [
@@ -379,4 +429,65 @@ ${"=".repeat(50)}
     .join("\n\n\n");
 
   return header + body;
+}
+
+// ---------------------------------------------------------------------------
+// Proposal + engagement letter generation (practice-builder)
+// ---------------------------------------------------------------------------
+
+export type ProposalContext = {
+  firmName: string;
+  firmCity: string | null;
+  prospectName: string;
+  industry: string | null;
+  financialYear: string;
+  scopeItems: { label: string; fee: number }[];
+  totalFee: number;
+  notes?: string | null;
+};
+
+export async function generateProposal(ctx: ProposalContext): Promise<{ proposal: string; engagementLetter: string }> {
+  const scopeBlock = ctx.scopeItems
+    .map((s) => `- ${s.label}: ₹${s.fee.toLocaleString("en-IN")}`)
+    .join("\n");
+
+  const base = `FIRM: ${ctx.firmName}${ctx.firmCity ? `, ${ctx.firmCity}` : ""}
+PROSPECT/CLIENT: ${ctx.prospectName}
+INDUSTRY: ${ctx.industry || "Not specified"}
+FINANCIAL YEAR: ${ctx.financialYear}
+SCOPE AND FEES:
+${scopeBlock}
+TOTAL PROFESSIONAL FEE: ₹${ctx.totalFee.toLocaleString("en-IN")} (plus applicable GST)
+${ctx.notes ? `ADDITIONAL NOTES: ${ctx.notes}` : ""}`;
+
+  const [proposalMsg, letterMsg] = await Promise.all([
+    anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 3000,
+      system: TP_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: `${base}\n\n---\n\nDraft a concise, persuasive PROPOSAL from the firm to the prospect for transfer pricing services. Structure: (1) context — TP obligations the prospect faces and penalty exposure (Sections 271AA/271BA/271G), (2) scope of services with the fee table above, (3) approach and timeline aligned to the October 31 Form 3CEB deadline, (4) why ${ctx.firmName}, (5) commercial terms (50% advance, balance on delivery; fees exclusive of GST). Business-professional tone, not legalese. Start directly with the proposal content.`,
+        },
+      ],
+    }),
+    anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 3000,
+      system: TP_SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: `${base}\n\n---\n\nDraft an ENGAGEMENT LETTER from the firm to the client for the above transfer pricing engagement, in the style Indian CA firms use (aligned with ICAI engagement-standard practice): addressee block, scope of engagement, management's responsibilities (accuracy of data, related-party identification), our responsibilities and limitations (documentation assistance and certification under Section 92E; not an assurance engagement on business decisions), fees and billing, confidentiality, limitation of liability, UDIN mention, signature blocks for both parties. Include "[date]", "[address]" placeholders where data is missing. Start directly with the letter.`,
+        },
+      ],
+    }),
+  ]);
+
+  const text = (m: Anthropic.Message) => {
+    const b = m.content.find((x) => x.type === "text");
+    return b && b.type === "text" ? b.text : "";
+  };
+  return { proposal: text(proposalMsg), engagementLetter: text(letterMsg) };
 }

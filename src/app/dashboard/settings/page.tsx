@@ -1,695 +1,442 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  User,
-  Settings,
+  Building2,
+  Users,
   CreditCard,
-  Key,
   Loader2,
   Save,
-  Eye,
-  EyeOff,
   Copy,
   Check,
-  RefreshCw,
+  Mail,
+  Trash2,
   Crown,
-  Zap,
-  Shield,
+  Link2,
 } from "lucide-react";
 
-interface UserProfile {
-  name: string;
+interface Member {
+  id: string;
+  name: string | null;
   email: string;
-  firm: string;
-  phone: string;
+  firmRole: string;
+  createdAt: string;
 }
 
-interface Preferences {
-  currency: string;
-  dateFormat: string;
-  documentLanguage: string;
+interface Invite {
+  id: string;
+  email: string;
+  firmRole: string;
+  expiresAt: string;
+  token: string;
 }
+
+interface PlanLimits {
+  label: string;
+  priceINR: number;
+  maxClients: number | null;
+  benchmarking: boolean;
+  screener: boolean;
+  proposals: boolean;
+  portal: boolean;
+  maxSeats: number | null;
+}
+
+interface Firm {
+  id: string;
+  name: string;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  pincode: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  frn: string | null;
+  logoText: string | null;
+  brandColor: string | null;
+  plan: string;
+  planExpiresAt: string | null;
+  users: Member[];
+  invites: Invite[];
+  planLimits: PlanLimits;
+  _count: { clients: number };
+}
+
+const PLAN_CARDS = [
+  {
+    id: "STARTER",
+    label: "Starter",
+    price: "₹24,999/yr",
+    features: ["5 clients", "AI documentation + DOCX/PDF export", "Compliance deadlines + reminders", "3 seats"],
+  },
+  {
+    id: "PROFESSIONAL",
+    label: "Professional",
+    price: "₹49,999/yr",
+    features: ["25 clients", "Everything in Starter", "Benchmarking module", "TP opportunity screener", "Proposals & engagement letters", "10 seats"],
+  },
+  {
+    id: "FIRM",
+    label: "Firm",
+    price: "₹99,999/yr",
+    features: ["Unlimited clients & seats", "Everything in Professional", "White-label client portal", "Priority support"],
+  },
+];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<
-    "profile" | "preferences" | "billing" | "api"
-  >("profile");
-  const [loading, setLoading] = useState(false);
+  const [firm, setFirm] = useState<Firm | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"firm" | "team" | "billing">("firm");
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-
-  // Profile state
-  const [profile, setProfile] = useState<UserProfile>({
-    name: "",
-    email: "",
-    firm: "",
-    phone: "",
-  });
-
-  // Preferences state
-  const [preferences, setPreferences] = useState<Preferences>({
-    currency: "INR",
-    dateFormat: "dd/MM/yyyy",
-    documentLanguage: "English",
-  });
-
-  // API state
-  const [apiKey, setApiKey] = useState("tp_live_sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [error, setError] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("STAFF");
+  const [inviting, setInviting] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
   const [copied, setCopied] = useState(false);
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    // Load profile from session
-    const loadProfile = async () => {
-      try {
-        const res = await fetch("/api/auth/session");
-        if (res.ok) {
-          const session = await res.json();
-          if (session?.user) {
-            setProfile({
-              name: session.user.name || "",
-              email: session.user.email || "",
-              firm: session.user.firm || "",
-              phone: session.user.phone || "",
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load profile:", error);
-      }
-    };
-    loadProfile();
+  const fetchFirm = useCallback(async () => {
+    const res = await fetch("/api/firm");
+    if (res.ok) {
+      const data = await res.json();
+      setFirm(data);
+      setForm({
+        name: data.name || "",
+        addressLine1: data.addressLine1 || "",
+        addressLine2: data.addressLine2 || "",
+        city: data.city || "",
+        pincode: data.pincode || "",
+        email: data.email || "",
+        phone: data.phone || "",
+        website: data.website || "",
+        frn: data.frn || "",
+        brandColor: data.brandColor || "#C2410C",
+      });
+    }
+    setLoading(false);
   }, []);
 
-  const handleProfileSave = async () => {
-    setLoading(true);
-    try {
-      // Simulate save - in production this would hit an API
-      await new Promise((resolve) => setTimeout(resolve, 800));
+  useEffect(() => {
+    fetchFirm();
+  }, [fetchFirm]);
+
+  const saveFirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    const res = await fetch("/api/firm", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    if (res.ok) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (error) {
-      console.error("Failed to save profile:", error);
-    } finally {
-      setLoading(false);
+      fetchFirm();
+    } else {
+      setError((await res.json()).error || "Save failed");
     }
+    setSaving(false);
   };
 
-  const handlePreferencesSave = async () => {
-    setLoading(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (error) {
-      console.error("Failed to save preferences:", error);
-    } finally {
-      setLoading(false);
+  const sendInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviting(true);
+    setError("");
+    setInviteLink("");
+    const res = await fetch("/api/firm/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: inviteEmail, firmRole: inviteRole }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setInviteLink(data.link);
+      setInviteEmail("");
+      fetchFirm();
+    } else {
+      setError(data.error || "Invite failed");
     }
+    setInviting(false);
   };
 
-  const copyApiKey = () => {
-    navigator.clipboard.writeText(apiKey);
+  const revokeInvite = async (id: string) => {
+    await fetch(`/api/firm/invites?id=${id}`, { method: "DELETE" });
+    fetchFirm();
+  };
+
+  const checkout = async (plan: string) => {
+    setCheckingOut(plan);
+    setError("");
+    const res = await fetch("/api/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      if (data.shortUrl) {
+        window.location.href = data.shortUrl;
+      } else if (data.mockPaid) {
+        fetchFirm();
+      }
+    } else {
+      setError(data.error || "Checkout failed");
+    }
+    setCheckingOut(null);
+  };
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(inviteLink);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1500);
   };
 
-  const regenerateApiKey = () => {
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-    const newKey =
-      "tp_live_sk_" +
-      Array.from({ length: 28 }, () =>
-        chars.charAt(Math.floor(Math.random() * chars.length))
-      ).join("");
-    setApiKey(newKey);
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+  if (!firm) return <div className="p-8 text-muted">Could not load firm.</div>;
 
-  const TABS = [
-    { key: "profile" as const, label: "Profile", icon: User },
-    { key: "preferences" as const, label: "Preferences", icon: Settings },
-    { key: "billing" as const, label: "Billing", icon: CreditCard },
-    { key: "api" as const, label: "API", icon: Key },
-  ];
+  const planActive = !firm.planExpiresAt || new Date(firm.planExpiresAt) > new Date();
 
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-          <p className="text-muted mt-1">
-            Manage your account and preferences
-          </p>
+        <h1 className="text-2xl font-bold text-foreground mb-1">Settings</h1>
+        <p className="text-muted mb-8">Firm profile, letterhead, team, and billing</p>
+
+        <div className="flex gap-2 mb-8">
+          {(
+            [
+              { id: "firm", label: "Firm & Letterhead", icon: Building2 },
+              { id: "team", label: "Team", icon: Users },
+              { id: "billing", label: "Billing", icon: CreditCard },
+            ] as const
+          ).map((t) => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium cursor-pointer ${
+                  tab === t.id ? "bg-primary text-white" : "bg-surface border border-border text-muted hover:text-foreground"
+                }`}
+              >
+                <Icon className="w-4 h-4" /> {t.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex gap-1 bg-surface border border-border rounded-lg p-1 mb-8 overflow-x-auto">
-          {TABS.map((tab) => (
+        {error && <div className="mb-6 p-4 bg-danger/10 border border-danger/30 rounded-lg text-sm text-danger">{error}</div>}
+
+        {tab === "firm" && (
+          <form onSubmit={saveFirm} className="bg-surface border border-border rounded-xl p-6 space-y-4">
+            <p className="text-sm text-muted">
+              These details appear on the letterhead of every exported DOCX/PDF deliverable.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {(
+                [
+                  ["name", "Firm name *"],
+                  ["frn", "ICAI Firm Registration No."],
+                  ["addressLine1", "Address line 1"],
+                  ["addressLine2", "Address line 2"],
+                  ["city", "City"],
+                  ["pincode", "PIN code"],
+                  ["email", "Email"],
+                  ["phone", "Phone"],
+                  ["website", "Website"],
+                ] as const
+              ).map(([key, label]) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
+                  <input
+                    type="text"
+                    required={key === "name"}
+                    value={form[key] || ""}
+                    onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))}
+                    className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground"
+                  />
+                </div>
+              ))}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Brand colour</label>
+                <input
+                  type="color"
+                  value={form.brandColor || "#C2410C"}
+                  onChange={(e) => setForm((p) => ({ ...p, brandColor: e.target.value }))}
+                  className="h-11 w-20 bg-background border border-border rounded-lg cursor-pointer"
+                />
+              </div>
+            </div>
             <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                activeTab === tab.key
-                  ? "bg-primary text-white"
-                  : "text-muted hover:text-foreground"
-              }`}
+              type="submit"
+              disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark font-medium disabled:opacity-50 cursor-pointer"
             >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              {saved ? "Saved" : "Save"}
             </button>
-          ))}
-        </div>
-
-        {/* Profile Tab */}
-        {activeTab === "profile" && (
-          <div className="bg-surface border border-border rounded-xl">
-            <div className="p-6 border-b border-border">
-              <h2 className="text-lg font-semibold text-foreground">
-                Profile Information
-              </h2>
-              <p className="text-sm text-muted mt-0.5">
-                Update your personal and firm details
-              </p>
-            </div>
-            <div className="p-6 space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.name}
-                    onChange={(e) =>
-                      setProfile((prev) => ({ ...prev, name: e.target.value }))
-                    }
-                    placeholder="CA Rajesh Kumar"
-                    className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={profile.email}
-                    onChange={(e) =>
-                      setProfile((prev) => ({
-                        ...prev,
-                        email: e.target.value,
-                      }))
-                    }
-                    placeholder="rajesh@caassociates.in"
-                    className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Firm Name
-                  </label>
-                  <input
-                    type="text"
-                    value={profile.firm}
-                    onChange={(e) =>
-                      setProfile((prev) => ({ ...prev, firm: e.target.value }))
-                    }
-                    placeholder="Kumar & Associates, Chartered Accountants"
-                    className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={profile.phone}
-                    onChange={(e) =>
-                      setProfile((prev) => ({
-                        ...prev,
-                        phone: e.target.value,
-                      }))
-                    }
-                    placeholder="+91 98765 43210"
-                    className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end pt-2">
-                <button
-                  onClick={handleProfileSave}
-                  disabled={loading}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium disabled:opacity-50 cursor-pointer"
-                >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : saved ? (
-                    <Check className="w-4 h-4" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  {loading ? "Saving..." : saved ? "Saved!" : "Save Changes"}
-                </button>
-              </div>
-            </div>
-          </div>
+          </form>
         )}
 
-        {/* Preferences Tab */}
-        {activeTab === "preferences" && (
-          <div className="bg-surface border border-border rounded-xl">
-            <div className="p-6 border-b border-border">
-              <h2 className="text-lg font-semibold text-foreground">
-                Preferences
-              </h2>
-              <p className="text-sm text-muted mt-0.5">
-                Customize your default settings
-              </p>
-            </div>
-            <div className="p-6 space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Default Currency
-                </label>
-                <select
-                  value={preferences.currency}
-                  onChange={(e) =>
-                    setPreferences((prev) => ({
-                      ...prev,
-                      currency: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-                >
-                  <option value="INR">INR - Indian Rupee</option>
-                  <option value="USD">USD - US Dollar</option>
-                  <option value="EUR">EUR - Euro</option>
-                  <option value="GBP">GBP - British Pound</option>
-                  <option value="SGD">SGD - Singapore Dollar</option>
-                  <option value="AED">AED - UAE Dirham</option>
-                  <option value="JPY">JPY - Japanese Yen</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Date Format
-                </label>
-                <select
-                  value={preferences.dateFormat}
-                  onChange={(e) =>
-                    setPreferences((prev) => ({
-                      ...prev,
-                      dateFormat: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-                >
-                  <option value="dd/MM/yyyy">DD/MM/YYYY (31/03/2026)</option>
-                  <option value="MM/dd/yyyy">MM/DD/YYYY (03/31/2026)</option>
-                  <option value="yyyy-MM-dd">YYYY-MM-DD (2026-03-31)</option>
-                  <option value="dd-MMM-yyyy">DD-MMM-YYYY (31-Mar-2026)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Document Language
-                </label>
-                <select
-                  value={preferences.documentLanguage}
-                  onChange={(e) =>
-                    setPreferences((prev) => ({
-                      ...prev,
-                      documentLanguage: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-                >
-                  <option value="English">English</option>
-                  <option value="Hindi">Hindi</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  onClick={handlePreferencesSave}
-                  disabled={loading}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium disabled:opacity-50 cursor-pointer"
-                >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : saved ? (
-                    <Check className="w-4 h-4" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  {loading
-                    ? "Saving..."
-                    : saved
-                      ? "Saved!"
-                      : "Save Preferences"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Billing Tab */}
-        {activeTab === "billing" && (
+        {tab === "team" && (
           <div className="space-y-6">
-            {/* Current Plan */}
-            <div className="bg-surface border border-primary/30 rounded-xl overflow-hidden">
-              <div className="p-6 border-b border-border bg-primary/5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <Crown className="w-5 h-5 text-primary" />
-                    </div>
+            <div className="bg-surface border border-border rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-foreground mb-4">
+                Members ({firm.users.length}
+                {firm.planLimits.maxSeats ? `/${firm.planLimits.maxSeats}` : ""})
+              </h2>
+              <div className="space-y-2">
+                {firm.users.map((m) => (
+                  <div key={m.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                     <div>
-                      <h2 className="text-lg font-semibold text-foreground">
-                        Professional Plan
-                      </h2>
-                      <p className="text-sm text-muted">
-                        Your current subscription
-                      </p>
+                      <div className="text-sm font-medium text-foreground flex items-center gap-2">
+                        {m.name || m.email}
+                        {m.firmRole === "PARTNER" && <Crown className="w-3.5 h-3.5 text-warning" />}
+                      </div>
+                      <div className="text-xs text-muted">{m.email}</div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-foreground">
-                      <span className="text-lg">&#8377;</span>29,999
-                    </p>
-                    <p className="text-xs text-muted">/month</p>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="text-center p-3 bg-surface-alt rounded-lg">
-                    <p className="text-xl font-bold text-foreground">25</p>
-                    <p className="text-xs text-muted">Clients</p>
-                  </div>
-                  <div className="text-center p-3 bg-surface-alt rounded-lg">
-                    <p className="text-xl font-bold text-foreground">100</p>
-                    <p className="text-xs text-muted">Entities</p>
-                  </div>
-                  <div className="text-center p-3 bg-surface-alt rounded-lg">
-                    <p className="text-xl font-bold text-foreground">
-                      Unlimited
-                    </p>
-                    <p className="text-xs text-muted">Documents</p>
-                  </div>
-                  <div className="text-center p-3 bg-surface-alt rounded-lg">
-                    <p className="text-xl font-bold text-foreground">
-                      Priority
-                    </p>
-                    <p className="text-xs text-muted">Support</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Usage Stats */}
-            <div className="bg-surface border border-border rounded-xl">
-              <div className="p-6 border-b border-border">
-                <h3 className="font-semibold text-foreground flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-primary" />
-                  Usage This Month
-                </h3>
-              </div>
-              <div className="p-6 space-y-5">
-                {[
-                  { label: "Clients", used: 3, total: 25 },
-                  { label: "Entities", used: 8, total: 100 },
-                  { label: "Documents Generated", used: 12, total: 50 },
-                  { label: "Analyses", used: 5, total: 25 },
-                ].map((stat) => (
-                  <div key={stat.label}>
-                    <div className="flex justify-between text-sm mb-1.5">
-                      <span className="text-foreground font-medium">
-                        {stat.label}
-                      </span>
-                      <span className="text-muted">
-                        {stat.used} / {stat.total}
-                      </span>
-                    </div>
-                    <div className="w-full bg-border rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full transition-all ${
-                          stat.used / stat.total > 0.8
-                            ? "bg-warning"
-                            : "bg-primary"
-                        }`}
-                        style={{
-                          width: `${Math.min((stat.used / stat.total) * 100, 100)}%`,
-                        }}
-                      />
-                    </div>
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-surface-alt text-muted font-medium capitalize">
+                      {m.firmRole.toLowerCase()}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Upgrade Prompt */}
-            <div className="bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20 rounded-xl p-6 flex flex-col sm:flex-row items-center gap-4">
-              <div className="flex-1">
-                <h3 className="font-semibold text-foreground mb-1">
-                  Need more capacity?
-                </h3>
-                <p className="text-sm text-muted">
-                  Upgrade to Enterprise for unlimited clients, entities,
-                  dedicated support, and custom document templates.
-                </p>
-              </div>
-              <button className="px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors font-medium whitespace-nowrap cursor-pointer">
-                Upgrade Plan
-              </button>
+            <div className="bg-surface border border-border rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-foreground mb-4">Invite a member</h2>
+              <form onSubmit={sendInvite} className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="email"
+                  required
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="colleague@firm.in"
+                  className="flex-1 px-3 py-2.5 bg-background border border-border rounded-lg text-foreground placeholder:text-muted"
+                />
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="px-3 py-2.5 bg-background border border-border rounded-lg text-foreground"
+                >
+                  <option value="STAFF">Staff</option>
+                  <option value="MANAGER">Manager</option>
+                  <option value="PARTNER">Partner</option>
+                </select>
+                <button
+                  type="submit"
+                  disabled={inviting}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark font-medium disabled:opacity-50 cursor-pointer"
+                >
+                  {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  Invite
+                </button>
+              </form>
+              {inviteLink && (
+                <div className="mt-4 flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                  <Link2 className="w-4 h-4 text-primary flex-shrink-0" />
+                  <code className="text-xs text-foreground truncate flex-1">{inviteLink}</code>
+                  <button onClick={copyLink} className="p-1.5 rounded-lg hover:bg-surface-alt cursor-pointer">
+                    {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4 text-muted" />}
+                  </button>
+                </div>
+              )}
+              {firm.invites.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <h3 className="text-xs font-semibold text-muted uppercase">Pending invites</h3>
+                  {firm.invites.map((inv) => (
+                    <div key={inv.id} className="flex items-center justify-between text-sm">
+                      <span className="text-foreground">{inv.email}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted capitalize">{inv.firmRole.toLowerCase()}</span>
+                        <button
+                          onClick={() => revokeInvite(inv.id)}
+                          className="p-1 rounded text-muted hover:text-danger cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* API Tab */}
-        {activeTab === "api" && (
+        {tab === "billing" && (
           <div className="space-y-6">
-            {/* AI Provider Configuration */}
-            <div className="bg-surface border border-border rounded-xl">
-              <div className="p-6 border-b border-border">
-                <h2 className="text-lg font-semibold text-foreground">
-                  AI Report Generation
-                </h2>
-                <p className="text-sm text-muted mt-0.5">
-                  Configure your Anthropic Claude API key for AI-powered document generation
-                </p>
-              </div>
-              <div className="p-6 space-y-5">
-                <div className="flex items-start gap-3 p-4 bg-primary/5 border border-primary/20 rounded-lg">
-                  <Zap className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="text-sm font-medium text-foreground mb-1">
-                      How AI Generation Works
-                    </h4>
-                    <p className="text-xs text-muted leading-relaxed">
-                      When you generate a document, TP Report pulls all entity data, transactions,
-                      and functional analysis from your database, then uses Claude AI to write
-                      each section with proper Indian TP legal references (Sections 92-92F, CBDT Rules 10DA/10DB).
-                      Each section can be regenerated individually or edited manually.
-                    </p>
-                  </div>
-                </div>
+            <div className={`rounded-xl border p-6 ${planActive ? "bg-surface border-border" : "bg-danger/5 border-danger/30"}`}>
+              <div className="flex items-center justify-between">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Anthropic API Key
-                  </label>
-                  <p className="text-xs text-muted mb-2">
-                    Get your API key from{" "}
-                    <a
-                      href="https://console.anthropic.com/settings/keys"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      console.anthropic.com
-                    </a>
-                    . This key is stored in your server environment only and is never exposed to the browser.
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      placeholder="sk-ant-api03-..."
-                      className="flex-1 px-3 py-2.5 bg-background border border-border rounded-lg text-foreground font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-muted"
-                      disabled
-                    />
-                    <button
-                      className="px-4 py-2.5 bg-surface-alt border border-border rounded-lg text-sm text-muted font-medium cursor-not-allowed opacity-50"
-                      disabled
-                    >
-                      Save
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted mt-2">
-                    Set the <code className="bg-surface-alt px-1.5 py-0.5 rounded text-xs">ANTHROPIC_API_KEY</code> environment variable in your <code className="bg-surface-alt px-1.5 py-0.5 rounded text-xs">.env</code> file directly. For security, API keys cannot be set through the browser UI.
-                  </p>
+                  <div className="text-sm text-muted">Current plan</div>
+                  <div className="text-xl font-bold text-foreground">{firm.planLimits.label}</div>
+                  {firm.planExpiresAt && (
+                    <div className={`text-xs mt-1 ${planActive ? "text-muted" : "text-danger font-medium"}`}>
+                      {planActive ? "Renews/expires" : "EXPIRED"} on{" "}
+                      {new Date(firm.planExpiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
+                    </div>
+                  )}
                 </div>
-                <div className="border-t border-border pt-5">
-                  <h3 className="text-sm font-semibold text-foreground mb-3">
-                    AI Model Configuration
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-muted mb-1">Model</label>
-                      <div className="px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm text-foreground">
-                        Claude Sonnet 4
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-muted mb-1">Max Tokens / Section</label>
-                      <div className="px-3 py-2 bg-surface-alt border border-border rounded-lg text-sm text-foreground">
-                        4,000
-                      </div>
-                    </div>
-                  </div>
+                <div className="text-right text-sm text-muted">
+                  {firm._count.clients} client{firm._count.clients === 1 ? "" : "s"}
+                  {firm.planLimits.maxClients ? ` of ${firm.planLimits.maxClients}` : " (unlimited)"}
                 </div>
               </div>
             </div>
 
-            {/* TP Report API Key Management */}
-            <div className="bg-surface border border-border rounded-xl">
-              <div className="p-6 border-b border-border">
-                <h2 className="text-lg font-semibold text-foreground">
-                  TP Report API Key
-                </h2>
-                <p className="text-sm text-muted mt-0.5">
-                  Manage your API keys for programmatic access
-                </p>
-              </div>
-              <div className="p-6 space-y-5">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Live API Key
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type={showApiKey ? "text" : "password"}
-                        value={apiKey}
-                        readOnly
-                        className="w-full px-3 py-2.5 pr-10 bg-background border border-border rounded-lg text-foreground font-mono text-sm focus:outline-none"
-                      />
-                      <button
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-colors cursor-pointer"
-                      >
-                        {showApiKey ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                    <button
-                      onClick={copyApiKey}
-                      className="px-3 py-2.5 bg-surface-alt border border-border rounded-lg hover:bg-border/50 transition-colors cursor-pointer"
-                      title="Copy API key"
-                    >
-                      {copied ? (
-                        <Check className="w-4 h-4 text-success" />
-                      ) : (
-                        <Copy className="w-4 h-4 text-muted" />
-                      )}
-                    </button>
-                    <button
-                      onClick={regenerateApiKey}
-                      className="px-3 py-2.5 bg-surface-alt border border-border rounded-lg hover:bg-border/50 transition-colors cursor-pointer"
-                      title="Regenerate API key"
-                    >
-                      <RefreshCw className="w-4 h-4 text-muted" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted mt-2">
-                    Use this key to authenticate API requests. Keep it secure
-                    and never expose it in client-side code.
-                  </p>
-                </div>
-
-                <div className="border-t border-border pt-5">
-                  <h3 className="text-sm font-semibold text-foreground mb-3">
-                    API Endpoints
-                  </h3>
-                  <div className="space-y-2">
-                    {[
-                      {
-                        method: "GET",
-                        path: "/api/clients",
-                        desc: "List all clients",
-                      },
-                      {
-                        method: "POST",
-                        path: "/api/clients",
-                        desc: "Create a client",
-                      },
-                      {
-                        method: "GET",
-                        path: "/api/entities",
-                        desc: "List all entities",
-                      },
-                      {
-                        method: "POST",
-                        path: "/api/entities",
-                        desc: "Create an entity",
-                      },
-                      {
-                        method: "GET",
-                        path: "/api/analysis",
-                        desc: "List analyses",
-                      },
-                      {
-                        method: "POST",
-                        path: "/api/documents",
-                        desc: "Generate a document",
-                      },
-                    ].map((endpoint) => (
-                      <div
-                        key={endpoint.path + endpoint.method}
-                        className="flex items-center gap-3 p-3 bg-surface-alt rounded-lg"
-                      >
-                        <span
-                          className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
-                            endpoint.method === "GET"
-                              ? "bg-success/10 text-success"
-                              : "bg-primary/10 text-primary"
-                          }`}
-                        >
-                          {endpoint.method}
-                        </span>
-                        <code className="text-sm text-foreground font-mono flex-1">
-                          {endpoint.path}
-                        </code>
-                        <span className="text-xs text-muted hidden sm:block">
-                          {endpoint.desc}
-                        </span>
-                      </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {PLAN_CARDS.map((p) => (
+                <div
+                  key={p.id}
+                  className={`rounded-xl border p-5 flex flex-col ${
+                    firm.plan === p.id ? "border-primary bg-primary/5" : "border-border bg-surface"
+                  }`}
+                >
+                  <div className="font-semibold text-foreground">{p.label}</div>
+                  <div className="text-xl font-bold text-primary mb-3">{p.price}</div>
+                  <ul className="text-xs text-muted space-y-1.5 mb-4 flex-1">
+                    {p.features.map((f) => (
+                      <li key={f} className="flex items-start gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-success flex-shrink-0 mt-px" /> {f}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
+                  <button
+                    onClick={() => checkout(p.id)}
+                    disabled={checkingOut !== null || (firm.plan === p.id && planActive)}
+                    className={`w-full px-3 py-2 rounded-lg text-sm font-medium cursor-pointer disabled:cursor-not-allowed ${
+                      firm.plan === p.id && planActive
+                        ? "bg-surface-alt text-muted"
+                        : "bg-primary text-white hover:bg-primary-dark"
+                    }`}
+                  >
+                    {checkingOut === p.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                    ) : firm.plan === p.id && planActive ? (
+                      "Current plan"
+                    ) : (
+                      `Switch to ${p.label}`
+                    )}
+                  </button>
                 </div>
-
-                <div className="border-t border-border pt-5">
-                  <div className="flex items-start gap-3 p-4 bg-surface-alt rounded-lg">
-                    <Shield className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="text-sm font-medium text-foreground mb-1">
-                        Rate Limiting
-                      </h4>
-                      <p className="text-xs text-muted">
-                        API requests are rate limited to 100 requests per minute
-                        on the Professional plan. Contact support for higher
-                        limits.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
+            <p className="text-xs text-muted">
+              Payments via Razorpay (annual billing, GST extra). In demo mode (no Razorpay keys
+              configured) plan changes apply immediately without payment.
+            </p>
           </div>
         )}
       </div>

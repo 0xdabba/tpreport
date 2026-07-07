@@ -184,54 +184,50 @@ const comparisonRows = [
 const pricingTiers = [
   {
     name: "Starter",
-    price: "9,999",
-    period: "/mo",
-    description: "For individual CAs getting started with TP practice",
+    price: "24,999",
+    period: "/yr",
+    description: "For individual CAs handling a few TP mandates",
     features: [
-      "Up to 3 client groups",
-      "Basic TP documentation (Local File)",
-      "Single-user access",
-      "Standard benchmarking",
-      "Email support",
-      "CBDT-compliant templates",
+      "Up to 5 clients",
+      "AI-drafted TP Study, Form 3CEB, Master File & agreements",
+      "DOCX + PDF export on your letterhead",
+      "Statutory deadline tracking with email reminders",
+      "3 team seats",
+      "Document review workflow (draft → partner sign-off)",
     ],
     cta: "Start Free Trial",
     highlighted: false,
   },
   {
     name: "Professional",
-    price: "29,999",
-    period: "/mo",
-    description: "For growing CA firms with an active TP practice",
+    price: "49,999",
+    period: "/yr",
+    description: "For firms actively building a TP practice",
     features: [
-      "Up to 15 client groups",
-      "Full suite (Local + Master + CbCR)",
-      "Up to 5 team members",
-      "Advanced benchmarking with global data",
-      "Priority support",
-      "White-label document branding",
-      "Intragroup agreement templates",
-      "Compliance calendar & alerts",
+      "Up to 25 clients",
+      "Everything in Starter",
+      "Benchmarking module — import Capitaline/Ace/Prowess exports, automated screening, Rule 10CA range",
+      "TP opportunity screener for your client base",
+      "Proposal & engagement-letter generator with fee calculator",
+      "TP case-law library",
+      "10 team seats",
     ],
     cta: "Start Free Trial",
     highlighted: true,
   },
   {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For large firms and TP-specialist practices",
+    name: "Firm",
+    price: "99,999",
+    period: "/yr",
+    description: "For TP-specialist and multi-partner practices",
     features: [
-      "Unlimited client groups",
-      "Full suite + API access",
-      "Unlimited team members",
-      "Custom benchmarking databases",
-      "Dedicated account manager",
-      "Custom integrations (Tally, SAP)",
-      "On-premise deployment option",
-      "Training & onboarding sessions",
+      "Unlimited clients & seats",
+      "Everything in Professional",
+      "White-label client portal (share final deliverables + calendar under your brand)",
+      "Built-in comparables dataset access",
+      "Priority support",
     ],
-    cta: "Contact Sales",
+    cta: "Start Free Trial",
     highlighted: false,
   },
 ];
@@ -401,8 +397,8 @@ function HeroSection() {
               custom={1}
               className="text-4xl font-bold leading-tight tracking-tight text-foreground sm:text-5xl lg:text-6xl"
             >
-              Transfer Pricing Compliance,{" "}
-              <span className="text-primary">Automated</span>
+              Run a Transfer Pricing practice,{" "}
+              <span className="text-primary">not just the paperwork</span>
             </motion.h1>
 
             <motion.p
@@ -410,9 +406,11 @@ function HeroSection() {
               custom={2}
               className="mt-6 text-lg leading-relaxed text-muted"
             >
-              Built for Indian CAs managing multi-entity clients. Generate
-              compliant documentation, functional analysis, and intragroup
-              agreements&nbsp;&mdash; without the Big&nbsp;Four price tag.
+              Everything an Indian CA firm needs to find, pitch, and deliver TP
+              mandates: screen your client base for obligations, generate
+              proposals, draft grounded documentation and benchmarking from real
+              comparables, and never miss a Form 3CEB deadline&nbsp;&mdash;
+              without the Big&nbsp;Four price tag.
             </motion.p>
 
             <motion.div
@@ -448,6 +446,25 @@ function HeroSection() {
                 <Check size={16} className="text-success" />
                 No credit card required
               </span>
+            </motion.div>
+
+            <motion.div
+              variants={fadeUp}
+              custom={5}
+              className="mt-6 flex flex-wrap gap-4 text-sm"
+            >
+              <a
+                href="/tools/safe-harbour-checker"
+                className="text-primary underline underline-offset-4 hover:text-primary-dark"
+              >
+                Free: Safe Harbour eligibility checker →
+              </a>
+              <a
+                href="/guides/new-act-tp-transition"
+                className="text-primary underline underline-offset-4 hover:text-primary-dark"
+              >
+                Guide: Income-tax Act 2025 TP transition →
+              </a>
             </motion.div>
           </motion.div>
 

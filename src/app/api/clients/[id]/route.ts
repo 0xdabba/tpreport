@@ -1,17 +1,10 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getFirmSession } from "@/lib/session";
 
-async function getAuthenticatedUserId(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return null;
-  return (session.user as { id?: string }).id || null;
-}
-
-async function verifyClientOwnership(clientId: string, userId: string) {
+async function verifyClientOwnership(clientId: string, firmId: string) {
   const client = await prisma.client.findFirst({
-    where: { id: clientId, userId },
+    where: { id: clientId, firmId },
   });
   return client;
 }
@@ -21,15 +14,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await params;
 
     const client = await prisma.client.findFirst({
-      where: { id, userId },
+      where: { id, firmId: s.firmId },
       include: {
         entities: {
           orderBy: { createdAt: "desc" },
@@ -43,6 +34,9 @@ export async function GET(
         alerts: {
           where: { status: "active" },
           orderBy: { createdAt: "desc" },
+        },
+        deadlines: {
+          orderBy: { dueDate: "asc" },
         },
         _count: {
           select: {
@@ -74,20 +68,18 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await params;
 
-    const existingClient = await verifyClientOwnership(id, userId);
+    const existingClient = await verifyClientOwnership(id, s.firmId);
     if (!existingClient) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
 
     const body = await request.json();
-    const { name, industry, description } = body;
+    const { name, industry, description, pan, cin, turnover, groupRevenue, hasIntlTxn, hasSDT } = body;
 
     const client = await prisma.client.update({
       where: { id },
@@ -95,6 +87,12 @@ export async function PUT(
         ...(name !== undefined && { name }),
         ...(industry !== undefined && { industry }),
         ...(description !== undefined && { description }),
+        ...(pan !== undefined && { pan }),
+        ...(cin !== undefined && { cin }),
+        ...(turnover !== undefined && { turnover: turnover === null || turnover === "" ? null : Number(turnover) }),
+        ...(groupRevenue !== undefined && { groupRevenue: groupRevenue === null || groupRevenue === "" ? null : Number(groupRevenue) }),
+        ...(hasIntlTxn !== undefined && { hasIntlTxn: !!hasIntlTxn }),
+        ...(hasSDT !== undefined && { hasSDT: !!hasSDT }),
       },
       include: {
         _count: {
@@ -123,14 +121,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = await getAuthenticatedUserId();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const s = await getFirmSession();
+    if (!s) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await params;
 
-    const existingClient = await verifyClientOwnership(id, userId);
+    const existingClient = await verifyClientOwnership(id, s.firmId);
     if (!existingClient) {
       return NextResponse.json({ error: "Client not found" }, { status: 404 });
     }
